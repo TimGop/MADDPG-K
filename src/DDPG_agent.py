@@ -1,0 +1,55 @@
+from actor_critic import Actor, Critic
+import torch
+import torch.nn.functional as F
+from torch.optim import Adam
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def soft_update(target, source, tau):
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
+
+
+def hard_update(target, source):
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(param.data)
+
+
+class DDPG_agent(object):
+    def __init__(self, gamma, tau, env, in_features, in_features_Q, lr, hidden):
+        self.gamma = gamma
+        self.tau = tau
+        self.env = env
+
+        # Define the actor
+        self.actor = Actor(in_features=in_features, hidden=hidden).to(device)
+        self.actor_target = Actor(in_features=in_features, hidden=hidden).to(device)
+
+        # Define the critic
+        self.critic = Critic(in_features_Q, hidden=hidden).to(device)
+        self.critic_target = Critic(in_features_Q, hidden=hidden).to(device)
+
+        self.actor_optimizer = Adam(self.actor.parameters(), lr=lr)  # optimizer for actor net
+        # weight_decay=1e-8???
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=lr)  # optimizer for critic net
+
+        hard_update(self.critic_target, self.critic)  # make sure _ and target have same weights
+        hard_update(self.actor_target, self.actor)  # make sure _ and target have same weights
+        
+    def act_update_target(self, select_action_State):
+        logits = self.actor_target(select_action_State)
+        action = torch.softmax(logits, dim=1)
+        return action
+
+    def act_update(self, select_action_State):
+        logits = self.actor(select_action_State)
+        action = torch.softmax(logits, dim=1)
+        return action, logits
+
+    def act(self, select_action_State):
+        with torch.no_grad():
+            logits = self.actor(select_action_State)
+            gumbel_noise = -torch.log(-torch.log(torch.rand(logits.shape)))
+            action = torch.softmax(logits + gumbel_noise, dim=1)
+            return action
