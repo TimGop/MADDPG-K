@@ -5,6 +5,8 @@ from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
 from MASAC_agent import MASAC_agent
 from SAC_agent import SAC_agent
+from MATD3_agent import MATD3_agent
+from TD3_agent import TD3_agent
 from actor_critic import Critic
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -65,6 +67,10 @@ class MARL_TRAINER(object):
         elif isinstance(self.agents[agent], SAC_agent):
             pass    
         elif isinstance(self.agents[agent], MASAC_agent):
+            pass    
+        elif isinstance(self.agents[agent], TD3_agent):
+            pass    
+        elif isinstance(self.agents[agent], MATD3_agent):
             pass    
         
     def update_DDPG(self, ddpg_obs,ddpg_act,ddpg_rew,ddpg_obs_next,ddpg_done, agent):
@@ -139,4 +145,10 @@ class MARL_TRAINER(object):
         pass
             
     def update_MASAC(self, rew, done,obs_n, obs_next_n,act_n, agent_list, agent, agent_indices):
+        pass
+    
+    def update_TD3(self, ddpg_obs,ddpg_act,ddpg_rew,ddpg_obs_next,ddpg_done, agent):
+        pass
+            
+    def update_MATD3(self, rew, done,obs_n, obs_next_n,act_n, agent_list, agent, agent_indices):
         pass

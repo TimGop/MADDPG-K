@@ -8,6 +8,10 @@ from pettingzoo.mpe import simple_tag_v3, simple_adversary_v3, simple_crypto_v3,
 from utils import ReplayMemory, Transition
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
+from MASAC_agent import MASAC_agent
+from SAC_agent import SAC_agent
+from MATD3_agent import MATD3_agent
+from TD3_agent import TD3_agent
 from MARL_TRAINER import MARL_TRAINER
 
 def parse_args():
@@ -17,8 +21,8 @@ def parse_args():
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=None, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=None, help="number of adversaries")
-    parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents", choices=["maddpg","ddpg"])
-    parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries", choices=["maddpg","ddpg"])
+    parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents", choices=["maddpg","ddpg","sac","masac","td3","matd3"])
+    parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries", choices=["maddpg","ddpg","sac","masac","td3","matd3"])
     #Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
@@ -33,7 +37,7 @@ def parse_args():
     parser.add_argument("--priority", type=bool, default=False, help="use priority buffer")
     parser.add_argument("--bootstrap", type=bool, default=True, help="starting training with random sampling")
     parser.add_argument("--eps", type=float, default=0.0, help="epsilon exploration")
-    parser.add_argument("--combined-critic", type=bool, default=False, help="each group shares a combined critic network")
+    parser.add_argument("--central-critic", type=bool, default=False, help="each group shares a central critic network")
     #Benchmarking
     parser.add_argument("--save-dir", type=str, default="./src/net_configs/MADDPG/net3/", help="directory in which training state and model should be saved")
     parser.add_argument("--result-name", type=str, default="rewards.csv", help="directory in which training state and model should be saved")
@@ -160,7 +164,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
 
 if __name__ == '__main__':
     args = parse_args()
-    algos = {"maddpg":MADDPG_agent,"ddpg":DDPG_agent}
+    algos = {"maddpg":MADDPG_agent,"ddpg":DDPG_agent,"sac":SAC_agent,"masac":MASAC_agent,"td3":TD3_agent,"matd3":MATD3_agent}
     env_dict = {"simple_tag_v3":simple_tag_v3,"simple_adversary_v3":simple_adversary_v3,
                 "simple_crypto_v3":simple_crypto_v3,"simple_push_v3":simple_push_v3,
                 "simple_reference_v3":simple_reference_v3,"simple_speaker_listener_v4":simple_speaker_listener_v4,
@@ -211,5 +215,5 @@ if __name__ == '__main__':
           update_iter=args.update_rate, save_iter=args.save_rate,
           output_path=args.save_dir, memory = args.memory, load_path=args.load_dir if args.restore else None,
           adv_model=adv_model,good_model=good_model, result_name=args.result_name, bootstrap_sampling=args.bootstrap, eps=args.eps,
-          priority=args.priority, comb_crit = args.combined_critic, wd = args.wd, grad_clip = args.gradclip)
+          priority=args.priority, comb_crit = args.central_critic, wd = args.wd, grad_clip = args.gradclip)
    
