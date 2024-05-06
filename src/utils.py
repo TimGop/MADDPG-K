@@ -20,10 +20,14 @@ Transition = namedtuple('Transition',
 
 
 class ReplayMemory(object):
-    def __init__(self, size):
+    def __init__(self, size, priority = False):
         self._store = []
         self._max_size = int(size)
         self._next_idx = 0
+        self.priority_list = None
+        self.priority = priority
+        if priority:
+            self.priority_list = []
 
     def __len__(self):
         return len(self._store)
@@ -37,8 +41,12 @@ class ReplayMemory(object):
 
         if len(self._store) <= self._next_idx:
             self._store.append(data)
+            if self.priority:
+                self.priority_list.append(rew)
         else:
             self._store[self._next_idx] = data
+            if self.priority:
+                self.priority_list[self._next_idx] = rew
         self._next_idx = (self._next_idx + 1) % self._max_size
 
     def _enc_sample(self, idxes):
@@ -54,8 +62,9 @@ class ReplayMemory(object):
         return torch.stack(obs), torch.stack(act), torch.stack(rew), torch.stack(next_obs), torch.stack(dones)
 
     def make_index(self, batch_size):
-        # [CHANGED] len(self._store) - 1)-->len(self._store) - 2) to make sure all agents can sample same transitions
-        return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]
+        if not self.priority:
+            return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]
+        return np.random.choice(np.arange(0,self.__len__()),size=(batch_size,), p=torch.tensor(self.priority_list).softmax())
 
     def make_latest_index(self, batch_size):
         idx = [(self._next_idx - 1 - i) % self._max_size for i in range(batch_size)]
@@ -74,18 +83,3 @@ class ReplayMemory(object):
 
     def collect(self):
         return self.sample(-1)
-
-
-"""class ReplayMemory(object):
-
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen=capacity)
-
-    def push(self, *args):
-        self.memory.append(Transition(*args))
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)"""

@@ -14,87 +14,86 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="simple_tag_v3", help="name of the scenario script")
-    parser.add_argument("--num-episodes", type=int, default=5e4, help="number of episodes")
+    parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=None, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=None, help="number of adversaries")
-    parser.add_argument("--good-agent", type=str, default="ddpg", help="policy for good agents")
-    parser.add_argument("--adv-agent", type=str, default="ddpg", help="policy of adversaries")
-    # Core training parameters
+    parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents", choices=["maddpg","ddpg"])
+    parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries", choices=["maddpg","ddpg"])
+    #Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
     parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-hidden", type=int, default=64, help="number of hidden units in Network")
-    parser.add_argument("--num-layers", type=int, default=1, help="number of hidden layers in Network")
+    parser.add_argument("--num-layers", type=int, default=1, help="number of hidden layers in Critic")
     parser.add_argument("--update-rate", type=int, default=100, help="update policies once every time this many environment steps are completed (multiple of 25)")
-    parser.add_argument("--memory", type=int, default=4e5, help="size of replay buffer")
-    parser.add_argument("--bootstrap", type=bool, default=True, help="start training with random sampling")
-    # Checkpointing
-    parser.add_argument("--save-dir", type=str, default="./test_maddpg/", help="directory in which training state and model should be saved")
+    parser.add_argument("--memory", type=int, default=int(4e5), help="size of replay buffer")
+    parser.add_argument("--gradclip", type=float, default=1, help="Parameter norm gradient clipping")
+    parser.add_argument("--wd", type=float, default=0, help="Optimizer weight decay")
+    parser.add_argument("--priority", type=bool, default=False, help="use priority buffer")
+    parser.add_argument("--bootstrap", type=bool, default=True, help="starting training with random sampling")
+    parser.add_argument("--eps", type=float, default=0.0, help="epsilon exploration")
+    parser.add_argument("--combined-critic", type=bool, default=False, help="each group shares a combined critic network")
+    #Benchmarking
+    parser.add_argument("--save-dir", type=str, default="./src/net_configs/MADDPG/net3/", help="directory in which training state and model should be saved")
     parser.add_argument("--result-name", type=str, default="rewards.csv", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=100, help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="./test_maddpg/", help="directory in which training state and model are loaded")
-    # Evaluation
+    parser.add_argument("--load-dir", type=str, default="./", help="directory in which training state and model are loaded")
+    #Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
     return parser.parse_args()
 
-def initialize_trainer(BATCH_SIZE, update_iter , gamma, tau, env,good_agent_network, adv_agent_network, lr, n_adv,
-                    n_good, agent_list, max_iter_per_ep, good_model, adv_model, update_freq):
-    return MARL_TRAINER(BATCH_SIZE=BATCH_SIZE, update_iter=update_iter, gamma=gamma, tau=tau, env=env,
-                    good_agent_network=good_agent_network, adv_agent_network=adv_agent_network, lr=lr, num_adv=n_adv,
-                    num_good=n_good, agent_list=agent_list, max_iter_per_ep=max_iter_per_ep, update_freq= update_freq, adv_model=adv_model, good_model=good_model)
+def initialize_trainer(gamma, tau, env,good_agent_network, adv_agent_network, lr, n_adv,
+                    n_good, agent_list, good_model, adv_model, comb_crit, wd,grad_clip):
+    return MARL_TRAINER(gamma=gamma, tau=tau, env=env,good_agent_network=good_agent_network, 
+                        adv_agent_network=adv_agent_network, lr=lr, num_adv=n_adv,
+                    num_good=n_good, agent_list=agent_list, adv_model=adv_model, good_model=good_model, comb_crit = comb_crit,
+                    wd=wd,grad_clip=grad_clip)
 
 #TODO: change display later
-def display(env, lr, gamma, n_episodes, good_agent_network, adv_agent_network, n_good, n_adv, tau, load_path,adv_model,good_model):
-    env.reset()
-    agent_list = env.agents
-    agents = {}
-    for i in range(n_adv):
-        agents.update(
-            {agent_list[i]: DDPG_agent(gamma=gamma, tau=tau, env=env, in_features=adv_agent_network["actor_input_size"],
-                                 in_features_Q=adv_agent_network["critic_input_size"], lr=lr,
-                                 hidden=adv_agent_network["actor_n_hidden"])})
-    for i in range(n_good):
-        agents.update({agent_list[i + n_adv]: DDPG_agent(gamma=gamma, tau=tau, env=env,
-                                                   in_features=good_agent_network["actor_input_size"],
-                                                   in_features_Q=good_agent_network["critic_input_size"], lr=lr,
-                                                   hidden=good_agent_network["actor_n_hidden"])})
+def display(env, lr, gamma, n_episodes, good_agent_network, adv_agent_network, n_good, n_adv, tau, load_path,adv_model,good_model, comb_crit):
+    # TODO change to accommodate other envs
+    agent_list = env.possible_agents
+    agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
+                    good_agent_network=good_agent_network, adv_agent_network=adv_agent_network, lr=lr, n_adv=n_adv,
+                    n_good=n_good, agent_list=agent_list, good_model = good_model, adv_model = adv_model, comb_crit= comb_crit)
+
     if load_path is not None:
         for agent in agent_list:
             print(agent + ":")
             print("imported net configs...")
-            agents[agent].actor.load_state_dict(
+            agent_trainer.agents[agent].actor.load_state_dict(
                 torch.load(load_path + "actor_" + agent + ".pt"))
-            agents[agent].actor_target.load_state_dict(
+            agent_trainer.agents[agent].actor_target.load_state_dict(
                 torch.load(load_path + "actor_" + agent + ".pt"))
-            agents[agent].critic.load_state_dict(
+            agent_trainer.agents[agent].critic.load_state_dict(
                 torch.load(load_path + "critic_" + agent + ".pt"))
-            agents[agent].critic_target.load_state_dict(
+            agent_trainer.agents[agent].critic_target.load_state_dict(
                 torch.load(load_path + "critic_" + agent + ".pt"))
+    obs_n, _ = env.reset()
     for i_episode in range(n_episodes):
-        env.reset()
-        for agent in env.agent_iter():
+        while True:
             env.render()
-            observation, reward, termination, truncation, info = env.last()
-            if termination or truncation:
-                action = None
-            else:
-                action = agents[agent].act(torch.tensor(observation).unsqueeze(0)).squeeze().numpy()
-            env.step(action)  # step switches to next agent!
+            action = {agent: agent_trainer.agents[agent].act_update(torch.tensor(obs_n[agent]).unsqueeze(0))[0].squeeze().detach().numpy() for agent in agent_list}
+            observation, reward, termination, truncation, info = env.step(action)
+            obs_n = observation
+            if all(termination.values()) or all(truncation.values()):
+                obs_n, _ = env.reset()
+                break
 
 
 def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
-          tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv, bootstrap_sampling):
+          tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
+          bootstrap_sampling, eps, priority, comb_crit, wd, grad_clip):
     env.reset()
     # TODO change to accommodate other envs
-    max_iter_per_ep = 25
-    agent_list = env.agents
+    agent_list = env.possible_agents
     agent_indices = {agent: agent_list.index(agent) for agent in agent_list}
-    memory = [ReplayMemory(int(memory)) for _ in agent_list]
-    agent_trainer = initialize_trainer(BATCH_SIZE=BATCH_SIZE, update_iter=update_iter, gamma=gamma, tau=tau, env=env,
+    memory = [ReplayMemory(int(memory), priority) for _ in agent_list]
+    agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
                     good_agent_network=good_agent_network, adv_agent_network=adv_agent_network, lr=lr, n_adv=n_adv,
-                    n_good=n_good, agent_list=agent_list, max_iter_per_ep=max_iter_per_ep, good_model = good_model, adv_model = adv_model, update_freq = update_iter)
+                    n_good=n_good, agent_list=agent_list, good_model = good_model, adv_model = adv_model, comb_crit = comb_crit, wd=wd, grad_clip=grad_clip)
 
     if load_path is not None:
         for agent in agent_list:
@@ -118,7 +117,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     ep_rew = np.zeros(shape=(len(agent_list)), dtype=np.int32)
     for i_episode in range(n_episodes):
         while True:
-            if i_episode < BATCH_SIZE and bootstrap_sampling:
+            if  bootstrap_sampling and (i_episode < BATCH_SIZE or eps >= np.random.rand()):
                 action_n = {agent_id: env.action_space(agent_id).sample() for agent_id in agent_list}
             else:
                 action_n = {agent: agent_trainer.agents[agent].act(torch.tensor(obs_n[agent]).unsqueeze(0)).squeeze().detach().numpy() for agent in agent_list}
@@ -130,8 +129,9 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                 memory[agent_indices[agent]].add(torch.tensor(obs_n[agent]), torch.tensor(action_n[agent]),
                             torch.tensor(rew_n[agent]), torch.tensor(new_obs_n[agent]),torch.tensor(done_n[agent]))
             obs_n = new_obs_n
-            for agent in agent_list:
-                agent_trainer.update(memory, agent_list, agent, agent_indices, steps, BATCH_SIZE)
+            if i_episode > BATCH_SIZE and steps % update_iter == 0:
+                for agent in agent_list:
+                    agent_trainer.update(memory, agent_list, agent, agent_indices, BATCH_SIZE)
             if done:
                 obs_n, _ = env.reset()
                 break
@@ -201,11 +201,15 @@ if __name__ == '__main__':
     if args.display:
         display(env=parallel_env, lr= args.lr, gamma= args.gamma, tau= args.tau, n_episodes= int(args.num_episodes)
           ,good_agent_network=settings_good,adv_agent_network=settings_adv,
-          n_good=num_good, n_adv= num_adv, load_path=args.load_dir if args.restore or args.display else None,adv_model=adv_model,good_model=good_model)
+          n_good=num_good, n_adv= num_adv, 
+          load_path=args.load_dir if args.restore or args.display else None,
+          adv_model=adv_model,good_model=good_model, comb_crit = args.combined_critic)
     else:
         train(env=parallel_env, BATCH_SIZE= args.batch_size, lr= args.lr, gamma= args.gamma, tau= args.tau, n_episodes= int(args.num_episodes)
           ,good_agent_network=settings_good,adv_agent_network=settings_adv,
           n_good=num_good, n_adv= num_adv, 
           update_iter=args.update_rate, save_iter=args.save_rate,
-          output_path=args.save_dir, memory = args.memory, load_path=args.load_dir if args.restore else None,adv_model=adv_model,good_model=good_model, result_name=args.result_name, bootstrap_sampling=args.bootstrap)
+          output_path=args.save_dir, memory = args.memory, load_path=args.load_dir if args.restore else None,
+          adv_model=adv_model,good_model=good_model, result_name=args.result_name, bootstrap_sampling=args.bootstrap, eps=args.eps,
+          priority=args.priority, comb_crit = args.combined_critic, wd = args.wd, grad_clip = args.gradclip)
    

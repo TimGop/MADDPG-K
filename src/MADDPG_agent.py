@@ -7,7 +7,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class MADDPG_agent(object):
-    def __init__(self, gamma, tau, env, in_features, in_features_Q, lr, hidden):
+    def __init__(self, gamma, tau, env, in_features, in_features_Q, lr, hidden,wd, critic = None):
         self.gamma = gamma
         self.tau = tau
         self.env = env
@@ -17,11 +17,11 @@ class MADDPG_agent(object):
         self.actor_target = Actor(in_features=in_features, hidden=hidden).to(device)
 
         # Define the critic
-        self.critic = Critic(in_features_Q, hidden=hidden).to(device)
+        self.critic = Critic(in_features_Q, hidden=hidden).to(device) if critic == None else critic
         self.critic_target = Critic(in_features_Q, hidden=hidden).to(device)
 
-        self.actor_optimizer = Adam(self.actor.parameters(), lr=lr)
-        self.critic_optimizer = Adam(self.critic.parameters(), lr=lr)
+        self.actor_optimizer = Adam(self.actor.parameters(), lr=lr, weight_decay=wd)
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=lr, weight_decay=wd)
 
         hard_update(self.critic_target, self.critic)
         hard_update(self.actor_target, self.actor)
