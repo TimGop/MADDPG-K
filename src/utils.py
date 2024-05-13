@@ -20,14 +20,10 @@ Transition = namedtuple('Transition',
 
 
 class ReplayMemory(object):
-    def __init__(self, size, priority = False):
+    def __init__(self, size, priority=False):
         self._store = []
         self._max_size = int(size)
         self._next_idx = 0
-        self.priority_list = None
-        self.priority = priority
-        if priority:
-            self.priority_list = []
 
     def __len__(self):
         return len(self._store)
@@ -37,16 +33,15 @@ class ReplayMemory(object):
         self._next_idx = 0
 
     def add(self, obs, act, rew, next_obs, done):
+
         data = (obs, act, rew, next_obs, done)
 
         if len(self._store) <= self._next_idx:
             self._store.append(data)
-            if self.priority:
-                self.priority_list.append(rew)
+
         else:
             self._store[self._next_idx] = data
-            if self.priority:
-                self.priority_list[self._next_idx] = rew
+
         self._next_idx = (self._next_idx + 1) % self._max_size
 
     def _enc_sample(self, idxes):
@@ -59,12 +54,12 @@ class ReplayMemory(object):
             rew.append(rew_t)
             next_obs.append(next_obs_t)
             dones.append(done)
-        return torch.stack(obs), torch.stack(act), torch.stack(rew), torch.stack(next_obs), torch.stack(dones)
+        return (torch.tensor(np.stack(obs), dtype=torch.float32), torch.tensor(np.stack(act), dtype=torch.float32),
+                torch.tensor(np.stack(rew), dtype=torch.float32), torch.tensor(np.stack(next_obs), dtype=torch.float32),
+                torch.tensor(np.stack(dones), dtype=torch.float32))
 
     def make_index(self, batch_size):
-        if not self.priority:
-            return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]
-        return np.random.choice(np.arange(0,self.__len__()),size=(batch_size,), p=torch.tensor(self.priority_list).softmax())
+        return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]
 
     def make_latest_index(self, batch_size):
         idx = [(self._next_idx - 1 - i) % self._max_size for i in range(batch_size)]
