@@ -20,7 +20,7 @@ Transition = namedtuple('Transition',
 
 
 class ReplayMemory(object):
-    def __init__(self, size, priority=False):
+    def __init__(self, size):
         self._store = []
         self._max_size = int(size)
         self._next_idx = 0
@@ -32,9 +32,9 @@ class ReplayMemory(object):
         self._store = []
         self._next_idx = 0
 
-    def add(self, obs, act, rew, next_obs, done):
+    def add(self, obs, act, rew, next_obs, done, knn_curr_list, knn_next_list):
 
-        data = (obs, act, rew, next_obs, done)
+        data = (obs, act, rew, next_obs, done, knn_curr_list, knn_next_list)
 
         if len(self._store) <= self._next_idx:
             self._store.append(data)
@@ -45,18 +45,20 @@ class ReplayMemory(object):
         self._next_idx = (self._next_idx + 1) % self._max_size
 
     def _enc_sample(self, idxes):
-        obs, act, rew, next_obs, dones = [], [], [], [], []
+        obs, act, rew, next_obs, dones, knn_curr_lists, knn_next_lists = [], [], [], [], [], [], []
         for i in idxes:
             data = self._store[i]
-            obs_t, act_t, rew_t, next_obs_t, done = data
+            obs_t, act_t, rew_t, next_obs_t, done, knn_curr_list, knn_next_list = data
             obs.append(obs_t)
             act.append(act_t)
             rew.append(rew_t)
             next_obs.append(next_obs_t)
             dones.append(done)
+            knn_curr_lists.append(knn_curr_list)
+            knn_next_lists.append(knn_next_list)
         return (torch.tensor(np.stack(obs), dtype=torch.float32), torch.tensor(np.stack(act), dtype=torch.float32),
                 torch.tensor(np.stack(rew), dtype=torch.float32), torch.tensor(np.stack(next_obs), dtype=torch.float32),
-                torch.tensor(np.stack(dones), dtype=torch.float32))
+                torch.tensor(np.stack(dones), dtype=torch.float32), knn_curr_lists, knn_next_lists)
 
     def make_index(self, batch_size):
         return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]
