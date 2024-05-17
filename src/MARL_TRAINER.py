@@ -15,28 +15,34 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def get_agents(n_adv, n_good, agent_list, gamma, tau, lr, env, adv_agent_network, good_agent_network, adv_model,
                good_model, comb_crit, wd):
     agents = {}
-
-    adv_critic = Critic(adv_agent_network["critic_input_size"], hidden=adv_agent_network["actor_n_hidden"]).to(device)
+    if n_adv > 0:
+        adv_critic = Critic(adv_agent_network["critic_input_size"], hidden=adv_agent_network["actor_n_hidden"]).to(device)
     good_critic = Critic(good_agent_network["critic_input_size"], hidden=good_agent_network["actor_n_hidden"]).to(
         device)
     for i in range(n_adv):
-        agents.update({agent_list[i]: adv_model(gamma=gamma, tau=tau, env=env,
+        if not comb_crit:
+            agents.update({agent_list[i]: adv_model(gamma=gamma, tau=tau, env=env,
                                                 in_features=adv_agent_network["actor_input_size"],
                                                 in_features_Q=adv_agent_network["critic_input_size"], lr=lr,
                                                 hidden=adv_agent_network["actor_n_hidden"], wd=wd)})
         if comb_crit:
-            agents[agent_list[i]].critic = adv_critic
+            agents.update({agent_list[i + n_adv]: good_model(gamma=gamma, tau=tau, env=env,
+                                                             in_features=adv_agent_network["actor_input_size"],
+                                                             in_features_Q=adv_agent_network["critic_input_size"],
+                                                             lr=lr, wd = wd,
+                                                             hidden=adv_agent_network["actor_n_hidden"],
+                                                             critic=adv_critic)})
     for i in range(n_good):
-        agents.update({agent_list[i + n_adv]: good_model(gamma=gamma, tau=tau, env=env,
+        if not comb_crit:
+            agents.update({agent_list[i + n_adv]: good_model(gamma=gamma, tau=tau, env=env,
                                                          in_features=good_agent_network["actor_input_size"],
                                                          in_features_Q=good_agent_network["critic_input_size"], lr=lr,
-                                                         hidden=good_agent_network["actor_n_hidden"], critic=adv_critic,
-                                                         wd=wd)})
-        if comb_crit:
+                                                         hidden=good_agent_network["actor_n_hidden"],wd=wd)})
+        else:
             agents.update({agent_list[i + n_adv]: good_model(gamma=gamma, tau=tau, env=env,
                                                              in_features=good_agent_network["actor_input_size"],
                                                              in_features_Q=good_agent_network["critic_input_size"],
-                                                             lr=lr,
+                                                             lr=lr, wd=wd,
                                                              hidden=good_agent_network["actor_n_hidden"],
                                                              critic=good_critic)})
     return agents
@@ -63,7 +69,7 @@ class MARL_TRAINER(object):
         knn_obs_nxt_lsts = None
         knn_obs_lsts = None
         if isinstance(self.agents[agent], DDPG_agent):
-            return self.update_DDPG(*(memory[agent_indices[agent]].sample_index(index)), agent)
+            return self.update_DDPG(*(memory[agent_indices[agent]].sample_index(index)[:5]), agent)
         # collect replay sample from all agents
         elif isinstance(self.agents[agent], MADDPG_agent):
             obs_n = []

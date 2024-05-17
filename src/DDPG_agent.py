@@ -50,6 +50,6 @@ class DDPG_agent(object):
     def act(self, select_action_State):
         with torch.no_grad():
             logits = self.actor(select_action_State)
-            gumbel_noise = -torch.log(-torch.log(torch.rand(logits.shape)))
+            gumbel_noise = -torch.log(-torch.log(torch.rand(logits.size())))
             action = torch.softmax(logits + gumbel_noise, dim=1)
             return action

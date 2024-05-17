@@ -2,6 +2,7 @@ import csv
 import time
 import argparse
 import torch
+import os
 import numpy as np
 from pettingzoo.mpe import simple_tag_v3, simple_adversary_v3, simple_crypto_v3, simple_push_v3, simple_reference_v3, \
     simple_speaker_listener_v4, simple_spread_v3, simple_v3, simple_world_comm_v3
@@ -18,10 +19,10 @@ from MARL_TRAINER import MARL_TRAINER
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_tag_v3", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="simple_spread_v3", help="name of the scenario script")
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=1, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=3, help="number of adversaries")
+    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
+    parser.add_argument("--num-adv", type=int, default=3, help="number of adversaries. if the environment allows for it")
     parser.add_argument("--num-good-obs", type=int, default=1,
                         help="number of good agents observed by other agents critics")
     parser.add_argument("--num-adv-obs", type=int, default=3,
@@ -30,7 +31,7 @@ def parse_args():
                         choices=["maddpg", "ddpg", "sac", "masac", "td3", "matd3"])
     parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries",
                         choices=["maddpg", "ddpg", "sac", "masac", "td3", "matd3"])
-    parser.add_argument("--kNN-enabled", type=bool, default=True, help="only look at kNN per critic")
+    parser.add_argument("--kNN-enabled", type=bool, default=False, help="only look at kNN per critic")
     # Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
@@ -43,22 +44,21 @@ def parse_args():
                              "25)")
     parser.add_argument("--memory", type=int, default=int(1e5), help="size of replay buffer")
     parser.add_argument("--gradclip", type=float, default=1, help="Parameter norm gradient clipping")
-    parser.add_argument("--wd", type=float, default=0, help="Optimizer weight decay")
-    parser.add_argument("--priority", type=bool, default=False, help="use priority buffer")
+    parser.add_argument("--wd", type=float, default=0.001, help="Optimizer weight decay")
     parser.add_argument("--bootstrap", type=bool, default=True, help="starting training with random sampling")
-    parser.add_argument("--eps", type=float, default=0.0, help="epsilon exploration")
+    parser.add_argument("--eps", type=float, default=0.05, help="epsilon exploration")
     parser.add_argument("--central-critic", type=bool, default=False, help="each group shares a central critic network")
     # Benchmarking
-    parser.add_argument("--save-dir", type=str, default="net_configs/")
+    parser.add_argument("--save-dir", type=str, default="./src/net_configs/")
     parser.add_argument("--result-name", type=str, default="rewards.csv",
                         help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=100,
                         help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="net_configs/",
+    parser.add_argument("--load-dir", type=str, default="./src/net_configs/",
                         help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=True)
-    parser.add_argument("--display", action="store_true", default=False)
+    parser.add_argument("--restore", action="store_true", default=False)
+    parser.add_argument("--display", action="store_true", default=True)
     return parser.parse_args()
 
 
@@ -84,11 +84,15 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs):
             adv_dist.append(np.linalg.norm(coord - coord_agent) + 1)
         else:
             good_dist.append(np.linalg.norm(coord - coord_agent) + 1)
-
-    adv_dist = np.stack(adv_dist)
+    if not adv_dist:
+        adv_dist = np.stack(adv_dist)
+        adv_dist_ind = adv_dist.argsort(axis=0)[:num_adv_obs]
+        shape = adv_dist.shape[0]
+    else : 
+        shape = 0
+        adv_dist_ind = []
     good_dist = np.stack(good_dist)
-    adv_dist_ind = adv_dist.argsort(axis=0)[:num_adv_obs]
-    good_dist_ind = good_dist.argsort(axis=0)[:num_good_obs] + adv_dist.shape[0]
+    good_dist_ind = good_dist.argsort(axis=0)[:num_good_obs] + shape
     knn_list = knn_list + list(adv_dist_ind) + list(good_dist_ind)
     ret_list = [agent_list[k] for k in knn_list]
     return ret_list
@@ -107,7 +111,7 @@ def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, l
 # TODO: change display later
 def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
             tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
-            bootstrap_sampling, eps, priority, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
+            bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
     # TODO change to accommodate other envs
     agent_list = env.possible_agents
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
@@ -142,7 +146,9 @@ def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agen
 
 def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
           tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
-          bootstrap_sampling, eps, priority, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
+          bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
     env.reset()
     # TODO change to accommodate other envs
     agent_list = env.possible_agents
@@ -236,10 +242,17 @@ if __name__ == '__main__':
                 "simple_reference_v3": simple_reference_v3, "simple_speaker_listener_v4": simple_speaker_listener_v4,
                 "simple_spread_v3": simple_spread_v3, "simple_v3": simple_v3,
                 "simple_world_comm_v3": simple_world_comm_v3}
-
-    parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+    if args.scenario == "simple_tag_v3":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                         render_mode="human" if args.display else None,
                                                         num_good=args.num_good, num_adversaries=args.num_adv)
+    elif args.scenario == "simple_spread_v3":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                        render_mode="human" if args.display else None,
+                                                        N=args.num_good)
+        args.num_adv = 0
+        args.num_adv_obs = 0
+    parallel_env.metadata["render_fps"] = float(30)
 
     num_good = 0
     num_adv = 0
@@ -263,6 +276,7 @@ if __name__ == '__main__':
         for s in parallel_env.possible_agents:
             sum_act_size += parallel_env.action_space(s).shape[0]
             sum_obs_size += parallel_env.observation_space(s).shape[0]
+    settings_adv = None
     for s in parallel_env.possible_agents:
         if s.__contains__("adversary"):
             num_adv += 1
@@ -278,7 +292,7 @@ if __name__ == '__main__':
             num_good += 1
             obs_sz = parallel_env.observation_space(s).shape[0]
             act_sz = parallel_env.action_space(s).shape[0]
-            critic_input = obs_sz + act_sz if args.adv_agent == "ddpg" else sum_act_size + sum_obs_size
+            critic_input = obs_sz + act_sz if args.good_agent == "ddpg" else sum_act_size + sum_obs_size
             settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
                              "actor_n_hidden": args.num_hidden,
                              "critic_input_size": critic_input, "critic_output_size": 1,
@@ -291,10 +305,9 @@ if __name__ == '__main__':
                 , good_agent_network=settings_good, adv_agent_network=settings_adv,
                 n_good=num_good, n_adv=num_adv,
                 update_iter=args.update_rate, save_iter=args.save_rate,
-                output_path=args.save_dir, memory=args.memory, load_path=args.load_dir if args.restore else None,
+                output_path=args.save_dir, memory=args.memory, load_path=args.load_dir,
                 adv_model=adv_model, good_model=good_model, result_name=args.result_name,
-                bootstrap_sampling=args.bootstrap, eps=args.eps,
-                priority=args.priority, comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip,
+                bootstrap_sampling=args.bootstrap, eps=args.eps, comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip,
                 num_good_obs=args.num_good_obs, num_adv_obs=args.num_adv_obs, kNN_enabled=args.kNN_enabled)
     else:
         train(env=parallel_env, BATCH_SIZE=args.batch_size, lr=args.lr, gamma=args.gamma, tau=args.tau,
@@ -304,6 +317,5 @@ if __name__ == '__main__':
               update_iter=args.update_rate, save_iter=args.save_rate,
               output_path=args.save_dir, memory=args.memory, load_path=args.load_dir if args.restore else None,
               adv_model=adv_model, good_model=good_model, result_name=args.result_name,
-              bootstrap_sampling=args.bootstrap, eps=args.eps,
-              priority=args.priority, comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip,
+              bootstrap_sampling=args.bootstrap, eps=args.eps, comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip,
               num_good_obs=args.num_good_obs, num_adv_obs=args.num_adv_obs, kNN_enabled=args.kNN_enabled)
