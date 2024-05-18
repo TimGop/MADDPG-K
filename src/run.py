@@ -19,20 +19,23 @@ from MARL_TRAINER import MARL_TRAINER
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_adversary_v3", help="name of the scenario script")
+    parser.add_argument("--scenario", type=str, default="simple_adversary_v3", help="name of the scenario script",
+                        choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
+                                 "simple_push_v3", "simple_crypto_v3", "simple_reference_v3",
+                                 "simple_speaker_listener_v4", "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=3,
+    parser.add_argument("--num-good", type=int, default=2, help="number of agents")
+    parser.add_argument("--num-adv", type=int, default=1,
                         help="number of adversaries. if the environment allows for it")
-    parser.add_argument("--num-good-obs", type=int, default=3,
+    parser.add_argument("--num-good-obs", type=int, default=2,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=3,
+    parser.add_argument("--num-adv-obs", type=int, default=1,
                         help="number of adversaries observed by other agents critics")
     parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents",
                         choices=["maddpg", "ddpg", "sac", "masac", "td3", "matd3"])
     parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries",
                         choices=["maddpg", "ddpg", "sac", "masac", "td3", "matd3"])
-    parser.add_argument("--kNN-enabled", type=bool, default=False, help="only look at kNN per critic")
+    parser.add_argument("--kNN-enabled", type=bool, default=True, help="only look at kNN per critic")
     # Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
@@ -109,11 +112,9 @@ def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, l
                         num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
 
-# TODO: change display later
 def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
             tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
             bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
-    # TODO change to accommodate other envs
     agent_list = env.possible_agents
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
                                        good_agent_network=good_agent_network, adv_agent_network=adv_agent_network,
@@ -122,16 +123,22 @@ def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agen
                                        comb_crit=comb_crit, wd=wd, grad_clip=grad_clip)
     if load_path is not None:
         for agent in agent_list:
+            try:
+                agent_trainer.agents[agent].actor.load_state_dict(
+                    torch.load(load_path + "actor_" + agent + ".pt"))
+                agent_trainer.agents[agent].actor_target.load_state_dict(
+                    torch.load(load_path + "actor_" + agent + ".pt"))
+                agent_trainer.agents[agent].critic.load_state_dict(
+                    torch.load(load_path + "critic_" + agent + ".pt"))
+                agent_trainer.agents[agent].critic_target.load_state_dict(
+                    torch.load(load_path + "critic_" + agent + ".pt"))
+            except RuntimeError:
+                print("error trying to load network configs with wrong shape for current network")
+                break
+
             print(agent + ":")
             print("imported net configs...")
-            agent_trainer.agents[agent].actor.load_state_dict(
-                torch.load(load_path + "actor_" + agent + ".pt"))
-            agent_trainer.agents[agent].actor_target.load_state_dict(
-                torch.load(load_path + "actor_" + agent + ".pt"))
-            agent_trainer.agents[agent].critic.load_state_dict(
-                torch.load(load_path + "critic_" + agent + ".pt"))
-            agent_trainer.agents[agent].critic_target.load_state_dict(
-                torch.load(load_path + "critic_" + agent + ".pt"))
+
     obs_n, _ = env.reset()
     for i_episode in range(n_episodes):
         while True:
@@ -165,16 +172,21 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
 
     if load_path is not None:
         for agent in agent_list:
+            try:
+                agent_trainer.agents[agent].actor.load_state_dict(
+                    torch.load(load_path + "actor_" + agent + ".pt"))
+                agent_trainer.agents[agent].actor_target.load_state_dict(
+                    torch.load(load_path + "actor_" + agent + ".pt"))
+                agent_trainer.agents[agent].critic.load_state_dict(
+                    torch.load(load_path + "critic_" + agent + ".pt"))
+                agent_trainer.agents[agent].critic_target.load_state_dict(
+                    torch.load(load_path + "critic_" + agent + ".pt"))
+            except RuntimeError:
+                print("error trying to load network configs with wrong shape for current network")
+                break
+
             print(agent + ":")
             print("imported net configs...")
-            agent_trainer.agents[agent].actor.load_state_dict(
-                torch.load(load_path + "actor_" + agent + ".pt"))
-            agent_trainer.agents[agent].actor_target.load_state_dict(
-                torch.load(load_path + "actor_" + agent + ".pt"))
-            agent_trainer.agents[agent].critic.load_state_dict(
-                torch.load(load_path + "critic_" + agent + ".pt"))
-            agent_trainer.agents[agent].critic_target.load_state_dict(
-                torch.load(load_path + "critic_" + agent + ".pt"))
 
     episodeList = []
     rewardsList = []
@@ -243,6 +255,7 @@ if __name__ == '__main__':
                 "simple_reference_v3": simple_reference_v3, "simple_speaker_listener_v4": simple_speaker_listener_v4,
                 "simple_spread_v3": simple_spread_v3, "simple_v3": simple_v3,
                 "simple_world_comm_v3": simple_world_comm_v3}
+
     if args.scenario == "simple_tag_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
@@ -251,12 +264,40 @@ if __name__ == '__main__':
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
-        args.num_adv = 0
         args.num_adv_obs = 0
+        # args.num_adv = 0
     elif args.scenario == "simple_adversary_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
+
+    elif args.scenario == "simple_push_v3":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+        args.kNN_enabled = False  # fixed size small env --> KNN equivalent to MADDPG(unless only look at closest agent)
+    elif args.scenario == "simple_v3":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+        args.kNN_enabled = False  # fixed size env with one agent --> KNN equivalent to MADDPG
+
+    # TODO dont work because different action shape for agents
+    elif args.scenario == "simple_reference_v3":
+        # local_ratio=0.5 is default (changing this value not of particular interest for our project)
+        parallel_env = env_dict[args.scenario].parallel_env(local_ratio=0.5, continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+    elif args.scenario == "simple_world_comm_v3":
+        # default: num_obstacles=1, num_food=2, num_forests=2
+        parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good, num_adversaries=args.num_adv,
+                                                            num_obstacles=1, num_food=2, num_forests=2,
+                                                            continuous_actions=True)
+    # TODO dont work because different agent types
+    elif args.scenario == "simple_speaker_listener_v4":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+    elif args.scenario == "simple_crypto_v3":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+
     else:
         raise Exception("The environment ", args.scenario, " is not implemented")
 
