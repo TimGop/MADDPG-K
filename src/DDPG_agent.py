@@ -1,6 +1,5 @@
 from actor_critic import Actor, Critic
 import torch
-import torch.nn.functional as F
 from torch.optim import Adam
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -17,17 +16,17 @@ def hard_update(target, source):
 
 
 class DDPG_agent(object):
-    def __init__(self, gamma, tau, env, in_features, in_features_Q, lr, hidden,wd, critic = None):
+    def __init__(self, gamma, tau, env, in_features, in_features_Q, lr, hidden, wd, critic=None, out_features_A=5):
         self.gamma = gamma
         self.tau = tau
         self.env = env
 
         # Define the actor
-        self.actor = Actor(in_features=in_features, hidden=hidden).to(device)
-        self.actor_target = Actor(in_features=in_features, hidden=hidden).to(device)
+        self.actor = Actor(in_features=in_features, out_features=out_features_A, hidden=hidden).to(device)
+        self.actor_target = Actor(in_features=in_features, out_features=out_features_A, hidden=hidden).to(device)
 
         # Define the critic
-        self.critic = Critic(in_features_Q, hidden=hidden).to(device) if critic == None else critic
+        self.critic = Critic(in_features_Q, hidden=hidden).to(device) if critic is None else critic
         self.critic_target = Critic(in_features_Q, hidden=hidden).to(device)
 
         self.actor_optimizer = Adam(self.actor.parameters(), lr=lr, weight_decay=wd)  # optimizer for actor net
@@ -36,7 +35,7 @@ class DDPG_agent(object):
 
         hard_update(self.critic_target, self.critic)  # make sure _ and target have same weights
         hard_update(self.actor_target, self.actor)  # make sure _ and target have same weights
-        
+
     def act_update_target(self, select_action_State):
         logits = self.actor_target(select_action_State)
         action = torch.softmax(logits, dim=1)

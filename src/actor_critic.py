@@ -5,11 +5,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Actor(nn.Module):
-    def __init__(self, in_features, hidden=64):
+    def __init__(self, in_features, out_features, hidden=64):
         super(Actor, self).__init__()
         self.input_layer = torch.nn.Linear(in_features=in_features, out_features=hidden)
         self.h0 = torch.nn.Linear(in_features=hidden, out_features=hidden)
-        self.out_layer = torch.nn.Linear(in_features=hidden, out_features=5)
+        self.out_layer = torch.nn.Linear(in_features=hidden, out_features=out_features)
 
     def forward(self, f_state):
         x = f_state

@@ -6,7 +6,7 @@ import os
 import numpy as np
 from pettingzoo.mpe import simple_tag_v3, simple_adversary_v3, simple_crypto_v3, simple_push_v3, simple_reference_v3, \
     simple_speaker_listener_v4, simple_spread_v3, simple_v3, simple_world_comm_v3
-from utils import ReplayMemory, Transition
+from utils import ReplayMemory
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
 from MASAC_agent import MASAC_agent
@@ -17,12 +17,13 @@ from MARL_TRAINER import MARL_TRAINER
 
 
 def parse_args():
-    parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
+    parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_adversary_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_adversary_v3",
+                        help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
-                                 "simple_push_v3", "simple_crypto_v3", "simple_reference_v3",
-                                 "simple_speaker_listener_v4", "simple_world_comm_v3"])
+                                 "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
+                                 "simple_world_comm_v3", "simple_crypto_v3"])  # envs on this last line don't work yet
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=2, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=1,
@@ -103,23 +104,22 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs):
 
 
 def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, lr, n_adv,
-                       n_good, agent_list, good_model, adv_model, comb_crit, wd, grad_clip, num_good_obs=None,
+                       n_good, agent_list, g_model, a_model, comb_crit, wd, grad_clip, num_good_obs=None,
                        num_adv_obs=None, kNN_enabled=False, BATCH_SIZE=None):
     return MARL_TRAINER(gamma=gamma, tau=tau, env=env, good_agent_network=good_agent_network,
                         adv_agent_network=adv_agent_network, lr=lr, num_adv=n_adv,
-                        num_good=n_good, agent_list=agent_list, adv_model=adv_model, good_model=good_model,
+                        num_good=n_good, agent_list=agent_list, adv_model=a_model, good_model=g_model,
                         comb_crit=comb_crit, wd=wd, grad_clip=grad_clip, num_good_obs=num_good_obs,
                         num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
 
-def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
-            tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
-            bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
+def display(env, lr, gamma, n_episodes, good_agent_network, adv_agent_network, tau, load_path, a_model, g_model,
+            n_good, n_adv, comb_crit, wd, grad_clip):
     agent_list = env.possible_agents
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
                                        good_agent_network=good_agent_network, adv_agent_network=adv_agent_network,
                                        lr=lr, n_adv=n_adv,
-                                       n_good=n_good, agent_list=agent_list, good_model=good_model, adv_model=adv_model,
+                                       n_good=n_good, agent_list=agent_list, g_model=g_model, a_model=a_model,
                                        comb_crit=comb_crit, wd=wd, grad_clip=grad_clip)
     if load_path is not None:
         for agent in agent_list:
@@ -153,7 +153,7 @@ def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agen
 
 
 def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, update_iter, save_iter,
-          tau, output_path, load_path, memory, result_name, adv_model, good_model, n_good, n_adv,
+          tau, output_path, load_path, memory, result_name, a_model, g_model, n_good, n_adv,
           bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
@@ -166,7 +166,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env,
                                        good_agent_network=good_agent_network, adv_agent_network=adv_agent_network,
                                        lr=lr, n_adv=n_adv,
-                                       n_good=n_good, agent_list=agent_list, good_model=good_model, adv_model=adv_model,
+                                       n_good=n_good, agent_list=agent_list, g_model=g_model, a_model=a_model,
                                        comb_crit=comb_crit, wd=wd, grad_clip=grad_clip, num_good_obs=num_good_obs,
                                        num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
@@ -193,7 +193,6 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     start = time.time()
     obs_n, _ = env.reset()
     steps = 0
-    i_episode = 0
     ep_rew = np.zeros(shape=(len(agent_list)), dtype=np.int32)
     for i_episode in range(n_episodes):
         while True:
@@ -265,12 +264,11 @@ if __name__ == '__main__':
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
         args.num_adv_obs = 0
-        # args.num_adv = 0
+        args.num_adv = 0
     elif args.scenario == "simple_adversary_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
-
     elif args.scenario == "simple_push_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None)
@@ -279,24 +277,25 @@ if __name__ == '__main__':
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None)
         args.kNN_enabled = False  # fixed size env with one agent --> KNN equivalent to MADDPG
-
-    # TODO dont work because different action shape for agents
+    elif args.scenario == "simple_speaker_listener_v4":
+        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
+                                                            render_mode="human" if args.display else None)
+        args.kNN_enabled = False
     elif args.scenario == "simple_reference_v3":
         # local_ratio=0.5 is default (changing this value not of particular interest for our project)
         parallel_env = env_dict[args.scenario].parallel_env(local_ratio=0.5, continuous_actions=True,
                                                             render_mode="human" if args.display else None)
+        args.kNN_enabled = False
+    # TODO dont work because different agent types
     elif args.scenario == "simple_world_comm_v3":
         # default: num_obstacles=1, num_food=2, num_forests=2
         parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good, num_adversaries=args.num_adv,
                                                             num_obstacles=1, num_food=2, num_forests=2,
                                                             continuous_actions=True)
-    # TODO dont work because different agent types
-    elif args.scenario == "simple_speaker_listener_v4":
-        parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
-                                                            render_mode="human" if args.display else None)
     elif args.scenario == "simple_crypto_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None)
+        args.kNN_enabled = False
 
     else:
         raise Exception("The environment ", args.scenario, " is not implemented")
@@ -325,8 +324,14 @@ if __name__ == '__main__':
             sum_act_size += parallel_env.action_space(s).shape[0]
             sum_obs_size += parallel_env.observation_space(s).shape[0]
     settings_adv = None
+    settings_good = None
     for s in parallel_env.possible_agents:
-        if s.__contains__("adversary"):
+        # print(s)
+        if s.__contains__("adversary") and s.__contains__("lead"):
+            raise NotImplementedError("needed for simple_world_comm_v3 environment")
+        elif s.__contains__("eve_"):
+            raise NotImplementedError("needed for simple_crypto_v3 environment")
+        elif s.__contains__("adversary"):
             num_adv += 1
             obs_sz = parallel_env.observation_space(s).shape[0]
             act_sz = parallel_env.action_space(s).shape[0]
@@ -335,7 +340,6 @@ if __name__ == '__main__':
                             "actor_n_hidden": args.num_hidden,
                             "critic_input_size": critic_input, "critic_output_size": 1,
                             "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
-
         elif s.__contains__("agent"):
             num_good += 1
             obs_sz = parallel_env.observation_space(s).shape[0]
@@ -345,27 +349,48 @@ if __name__ == '__main__':
                              "actor_n_hidden": args.num_hidden,
                              "critic_input_size": critic_input, "critic_output_size": 1,
                              "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+
+        elif s.__contains__("listener"):
+            num_good += 1
+            obs_sz = parallel_env.observation_space(s).shape[0]
+            act_sz = parallel_env.action_space(s).shape[0]
+            # print(obs_sz)
+            # print(act_sz)
+            critic_input = obs_sz + act_sz if args.good_agent == "ddpg" else sum_act_size + sum_obs_size
+            settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
+                             "actor_n_hidden": args.num_hidden,
+                             "critic_input_size": critic_input, "critic_output_size": 1,
+                             "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+
+        elif s.__contains__("speaker"):
+            num_adv += 1
+            obs_sz = parallel_env.observation_space(s).shape[0]
+            act_sz = parallel_env.action_space(s).shape[0]
+            # print(obs_sz)
+            # print(act_sz)
+            critic_input = obs_sz + act_sz if args.adv_agent == "ddpg" else sum_act_size + sum_obs_size
+            settings_adv = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
+                            "actor_n_hidden": args.num_hidden,
+                            "critic_input_size": critic_input, "critic_output_size": 1,
+                            "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+        else:
+            raise Exception("Settings for agents could not be initialized (invalid agent types)...")
+
     adv_model = algos[args.adv_agent]
     good_model = algos[args.good_agent]
     if args.display:
-        display(env=parallel_env, BATCH_SIZE=args.batch_size, lr=args.lr, gamma=args.gamma, tau=args.tau,
-                n_episodes=int(args.num_episodes)
-                , good_agent_network=settings_good, adv_agent_network=settings_adv,
-                n_good=num_good, n_adv=num_adv,
-                update_iter=args.update_rate, save_iter=args.save_rate,
-                output_path=args.save_dir, memory=args.memory, load_path=args.load_dir,
-                adv_model=adv_model, good_model=good_model, result_name=args.result_name,
-                bootstrap_sampling=args.bootstrap, eps=args.eps, comb_crit=args.central_critic, wd=args.wd,
-                grad_clip=args.gradclip,
-                num_good_obs=args.num_good_obs, num_adv_obs=args.num_adv_obs, kNN_enabled=args.kNN_enabled)
+        display(env=parallel_env, lr=args.lr, gamma=args.gamma, tau=args.tau,
+                n_episodes=int(args.num_episodes), good_agent_network=settings_good, adv_agent_network=settings_adv,
+                n_good=num_good, n_adv=num_adv, load_path=args.load_dir,
+                a_model=adv_model, g_model=good_model, comb_crit=args.central_critic, wd=args.wd,
+                grad_clip=args.gradclip)
     else:
         train(env=parallel_env, BATCH_SIZE=args.batch_size, lr=args.lr, gamma=args.gamma, tau=args.tau,
-              n_episodes=int(args.num_episodes)
-              , good_agent_network=settings_good, adv_agent_network=settings_adv,
+              n_episodes=int(args.num_episodes), good_agent_network=settings_good, adv_agent_network=settings_adv,
               n_good=num_good, n_adv=num_adv,
               update_iter=args.update_rate, save_iter=args.save_rate,
               output_path=args.save_dir, memory=args.memory, load_path=args.load_dir if args.restore else None,
-              adv_model=adv_model, good_model=good_model, result_name=args.result_name,
+              a_model=adv_model, g_model=good_model, result_name=args.result_name,
               bootstrap_sampling=args.bootstrap, eps=args.eps, comb_crit=args.central_critic, wd=args.wd,
               grad_clip=args.gradclip,
               num_good_obs=args.num_good_obs, num_adv_obs=args.num_adv_obs, kNN_enabled=args.kNN_enabled)
