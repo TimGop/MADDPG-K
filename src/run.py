@@ -9,26 +9,22 @@ from pettingzoo.mpe import simple_tag_v3, simple_adversary_v3, simple_crypto_v3,
 from utils import ReplayMemory
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
-from MASAC_agent import MASAC_agent
-from SAC_agent import SAC_agent
-from MATD3_agent import MATD3_agent
-from TD3_agent import TD3_agent
 from MARL_TRAINER import MARL_TRAINER
 
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_adversary_v3",
+    parser.add_argument("--scenario", type=str, default="simple_spread_v3",
                         help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3", "simple_crypto_v3"])  # envs on this last line don't work yet
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=2, help="number of agents")
+    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=1,
                         help="number of adversaries. if the environment allows for it")
-    parser.add_argument("--num-good-obs", type=int, default=2,
+    parser.add_argument("--num-good-obs", type=int, default=3,
                         help="number of good agents observed by other agents critics")
     parser.add_argument("--num-adv-obs", type=int, default=1,
                         help="number of adversaries observed by other agents critics")
@@ -247,8 +243,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
 
 if __name__ == '__main__':
     args = parse_args()
-    algos = {"maddpg": MADDPG_agent, "ddpg": DDPG_agent, "sac": SAC_agent, "masac": MASAC_agent, "td3": TD3_agent,
-             "matd3": MATD3_agent}
+    algos = {"maddpg": MADDPG_agent, "ddpg": DDPG_agent}
     env_dict = {"simple_tag_v3": simple_tag_v3, "simple_adversary_v3": simple_adversary_v3,
                 "simple_crypto_v3": simple_crypto_v3, "simple_push_v3": simple_push_v3,
                 "simple_reference_v3": simple_reference_v3, "simple_speaker_listener_v4": simple_speaker_listener_v4,
@@ -286,7 +281,7 @@ if __name__ == '__main__':
         parallel_env = env_dict[args.scenario].parallel_env(local_ratio=0.5, continuous_actions=True,
                                                             render_mode="human" if args.display else None)
         args.kNN_enabled = False
-    # TODO dont work because different agent types
+    # TODO dont work because three different agent types (not implemented yet)
     elif args.scenario == "simple_world_comm_v3":
         # default: num_obstacles=1, num_food=2, num_forests=2
         parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good, num_adversaries=args.num_adv,

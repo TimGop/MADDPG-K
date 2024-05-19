@@ -3,10 +3,6 @@ import torch.nn.functional as F
 from utils import soft_update
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
-from MASAC_agent import MASAC_agent
-from SAC_agent import SAC_agent
-from MATD3_agent import MATD3_agent
-from TD3_agent import TD3_agent
 from actor_critic import Critic
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -14,7 +10,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_agents(n_adv, n_good, agent_list, gamma, tau, lr, env, adv_agent_network, good_agent_network, adv_model,
                good_model, comb_crit, wd):
-    # TODO talk to RASMUS about this section
     agents = {}
     if n_adv > 0:
         adv_critic = Critic(adv_agent_network["critic_input_size"], hidden=adv_agent_network["actor_n_hidden"]).to(
@@ -134,15 +129,8 @@ class MARL_TRAINER(object):
             self.update_MADDPG(rew=rew, done=done, obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
                                agent_list=agent_list, agent=agent, agent_indices=agent_indices,
                                knn_obs_nxt_lsts=knn_obs_nxt_lsts, knn_indices=knn_indices)
-
-        elif isinstance(self.agents[agent], SAC_agent):
-            pass
-        elif isinstance(self.agents[agent], MASAC_agent):
-            pass
-        elif isinstance(self.agents[agent], TD3_agent):
-            pass
-        elif isinstance(self.agents[agent], MATD3_agent):
-            pass
+        else:
+            raise NotImplementedError("(not available) / (not implemented) multi-agent RL learning algorithm")
 
     def update_DDPG(self, ddpg_obs, ddpg_act, ddpg_rew, ddpg_obs_next, ddpg_done, agent):
 
@@ -232,15 +220,3 @@ class MARL_TRAINER(object):
         soft_update(self.agents[agent].critic_target, self.agents[agent].critic, self.tau)
 
         return policy_loss.item(), Q_loss.item()
-
-    def update_SAC(self, ddpg_obs, ddpg_act, ddpg_rew, ddpg_obs_next, ddpg_done, agent):
-        pass
-
-    def update_MASAC(self, rew, done, obs_n, obs_next_n, act_n, agent_list, agent, agent_indices):
-        pass
-
-    def update_TD3(self, ddpg_obs, ddpg_act, ddpg_rew, ddpg_obs_next, ddpg_done, agent):
-        pass
-
-    def update_MATD3(self, rew, done, obs_n, obs_next_n, act_n, agent_list, agent, agent_indices):
-        pass
