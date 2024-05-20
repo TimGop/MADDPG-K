@@ -5,9 +5,5 @@ matplotlib==3.8.4
 numpy==1.26.4
 pandas==2.2.2
 pettingzoo==1.24.3
-pyglet==1.5.27
 six==1.15.0
-tensorflow==2.9.0
-tf-slim==1.1.0
 torch==2.2.1
-tensorflow_intel==2.10.0
