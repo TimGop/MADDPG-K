@@ -132,15 +132,15 @@ def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, a
                         num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
 
-def display(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, adv_alt_agent_network,
+def display(env,lr, gamma, n_episodes, good_agent_network, adv_agent_network, adv_alt_agent_network,
             tau, load_path, a_model, a_alt_model, g_model,
-          n_good, n_adv, n_adv_alt,comb_crit, wd, grad_clip, num_good_obs, num_adv_obs,kNN_enabled):
+          n_good, n_adv, n_adv_alt,comb_crit, wd, grad_clip):
     agent_list = env.possible_agents
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env, good_agent_network=good_agent_network,
                                        adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network,
                                        lr=lr, n_adv=n_adv, n_adv_alt=n_adv_alt, n_good=n_good, agent_list=agent_list,
                                        g_model=g_model, a_model=a_model, a_alt_model=a_alt_model, comb_crit=comb_crit,
-                                       wd=wd, grad_clip=grad_clip,num_good_obs=num_good_obs,num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
+                                       wd=wd, grad_clip=grad_clip)
     if load_path is not None:
         for agent in agent_list:
             try:
