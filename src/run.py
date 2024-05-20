@@ -10,7 +10,7 @@ from utils import ReplayMemory
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
 from MARL_TRAINER import MARL_TRAINER
-
+has_adv = False
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
@@ -20,8 +20,8 @@ def parse_args():
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=1, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=3,
+    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
+    parser.add_argument("--num-adv", type=int, default=9,
                         help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
@@ -68,54 +68,22 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario):
-    agent_is_adv = agent.__contains__("adversary")
-    agent_is_lead_adv = agent.__contains__("lead") and agent.__contains__("adversary")
-    # ORDER OF LIST:
-    # [ ...adv(potentially include agent_curr at beginning)..., ...ag(potentially include agent_curr at beginning)...]
-    adv_dist = []
-    adv_alt_dist = []
-    good_dist = []
-    for i, ag in enumerate(agent_list):
-        if ag == agent and agent_is_adv and not agent_is_lead_adv:
-            adv_dist.append(0)
-            continue
-        elif ag == agent and agent_is_adv and agent_is_lead_adv:
-            adv_alt_dist.append(0)
-            continue
-        elif ag == agent and not agent_is_adv:
-            good_dist.append(0)
-            continue
-        if scenario == "simple_adversary_v3":
-            coord_agent = obs[agent][:2]  # TODO not always the coordinates!!!
-            coord = obs[ag][:2] 
-        else:
-            coord_agent = obs[agent][2:4]  # TODO not always the coordinates!!!
-            coord = obs[ag][2:4]  # TODO not always the coordinates!!!
-        # adding 1 to Euclidean distance doesn't change order after being sorted aside from making sure that
-        # the current agent is first in either adv_dist_ind or good_dist_ind
-        if ag.__contains__("adversary") and not ag.__contains__("lead"):
-            adv_dist.append(np.linalg.norm(coord - coord_agent) + 1)
-        elif ag.__contains__("adversary") and ag.__contains__("lead"):
-            adv_alt_dist.append(np.linalg.norm(coord - coord_agent) + 1)
-        else:
-            good_dist.append(np.linalg.norm(coord - coord_agent) + 1)
-    if adv_alt_dist:
-        adv_alt_dist = np.stack(adv_alt_dist)
-        adv_alt_dist_ind = adv_alt_dist.argsort(axis=0)[:num_adv_alt_obs]
-        shape_alt = adv_alt_dist.shape[0]
+def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start,adv_start):
+    knn_list = []
+    ag_id = agent_list.index(agent)
+    if scenario == "simple_adversary_v3":
+        dist = np.stack([obv[:2] for obv in list(obs.values())])
     else:
-        adv_alt_dist_ind = []
-        shape_alt = 0
-    if adv_dist:
-        adv_dist = np.stack(adv_dist)
-        adv_dist_ind = adv_dist.argsort(axis=0)[:num_adv_obs] + shape_alt
-        shape = adv_dist.shape[0]
-    else:
-        adv_dist_ind = []
-        shape = 0
-    good_dist = np.stack(good_dist)
-    good_dist_ind = good_dist.argsort(axis=0)[:num_good_obs] + shape
+        dist = np.stack([obv[2:4] for obv in list(obs.values())])
+    dist = np.linalg.norm(dist - dist[ag_id], axis= 1) + 1
+    dist[ag_id] = 0
+    adv_dist_ind = []
+    adv_alt_dist_ind = []
+    if num_adv_alt_obs > 0:
+        adv_alt_dist_ind = dist[:adv_start].argsort(axis=0)[:num_adv_alt_obs]
+    if num_adv_obs > 0:
+        adv_dist_ind = dist[adv_start:good_start].argsort(axis=0)[:num_adv_obs] + num_adv_alt
+    good_dist_ind = dist[good_start:].argsort(axis=0)[:num_good_obs] + num_adv_alt + num_adv
     knn_list = list(adv_alt_dist_ind) + list(adv_dist_ind) + list(good_dist_ind)
     ret_list = [agent_list[k] for k in knn_list]
     return ret_list
@@ -182,6 +150,11 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
 
     agent_list = env.possible_agents
     #print(len(agent_list))
+    adv_start = 0
+    if has_adv:
+        adv_start = agent_list.index("adversary_0")
+    good_start = agent_list.index("agent_0")
+
     agent_indices = {agent: agent_list.index(agent) for agent in agent_list}
     memory = [ReplayMemory(int(memory)) for _ in agent_list]
 
@@ -235,8 +208,8 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                 knn_obs_nxt_lst = None
                 if kNN_enabled:
                     strt = time.time_ns()
-                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario)
-                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario)
+                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start, adv_start)
+                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start, adv_start)
                     tme += (time.time_ns() - strt)
                 memory[agent_indices[agent]].add(obs_n[agent], action_n[agent],
                                                  rew_n[agent], new_obs_n[agent],
@@ -291,16 +264,27 @@ if __name__ == '__main__':
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             num_good=args.num_good, num_adversaries=args.num_adv)
+        has_adv=True
+        args.num_adv_alt = 0
+        args.num_adv_alt_obs = 0
     elif args.scenario == "simple_spread_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
-        args.num_adv_obs = 0
+        
+        args.num_adv_alt = 0
+        args.num_adv_alt_obs = 0
         args.num_adv = 0
+        args.num_adv_obs = 0
     elif args.scenario == "simple_adversary_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
+        
+        args.num_adv_alt = 0
+        args.num_adv_alt_obs = 0
+        args.num_adv = 1
+        args.num_adv_obs = 1
     elif args.scenario == "simple_push_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None)
@@ -324,6 +308,7 @@ if __name__ == '__main__':
                                                             num_adversaries=args.num_adv+args.num_adv_alt,
                                                             num_obstacles=1, num_food=2, num_forests=2,
                                                             continuous_actions=True)
+        has_adv=True
     else:
         raise Exception("The environment ", args.scenario, " is not implemented")
 
