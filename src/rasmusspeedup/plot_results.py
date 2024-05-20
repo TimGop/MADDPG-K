@@ -26,10 +26,7 @@ def plot_all_tog(csv_paths):
     for csv_path in csv_paths:
         df = pd.read_csv(csv_path, sep= ",", header= None)
         per_agent_rewards = df.iloc[1].to_numpy()
-        per_agent_rewards = [np.fromstring(per_agent_rewards[i][2:-1], dtype=np.float32, sep=" ") for i in range(per_agent_rewards.shape[0])]
-        for i, a in enumerate(per_agent_rewards):
-            if a.shape[0] != 4:
-                per_agent_rewards[i] = per_agent_rewards[i-1]
+        per_agent_rewards = [np.fromstring(per_agent_rewards[i][1:-1], dtype=np.float32, sep=" ") for i in range(per_agent_rewards.shape[0])]
         per_agent_rewards = np.stack(per_agent_rewards , axis=0)
         total_agents_rewards = per_agent_rewards.sum(axis = 1)
         episodes = df.iloc[0].to_numpy(dtype=int)
