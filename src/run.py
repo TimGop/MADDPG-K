@@ -15,17 +15,17 @@ from MARL_TRAINER import MARL_TRAINER
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_world_comm_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_spread_v3", help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=2, help="number of agents")
+    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=3,
                         help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
-    parser.add_argument("--num-good-obs", type=int, default=2,
+    parser.add_argument("--num-good-obs", type=int, default=1,
                         help="number of good agents observed by other agents critics")
     parser.add_argument("--num-adv-obs", type=int, default=3,
                         help="number of adversaries observed by other agents critics")
@@ -37,7 +37,7 @@ def parse_args():
                         choices=["maddpg", "ddpg"])
     parser.add_argument("--adv-alt-agent", type=str, default="maddpg",
                         help="policy of second adversary type or third agent", choices=["maddpg", "ddpg"])
-    parser.add_argument("--kNN-enabled", type=bool, default=True, help="only look at kNN per critic")
+    parser.add_argument("--kNN-enabled", type=bool, default=False, help="only look at kNN per critic")
     # Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument("--wd", type=float, default=0, help="Optimizer weight decay")
     parser.add_argument("--bootstrap", type=bool, default=True, help="starting training with random sampling")
     parser.add_argument("--eps", type=float, default=0, help="epsilon exploration")
-    parser.add_argument("--central-critic", type=bool, default=False, help="each group shares a central critic network")
+    parser.add_argument("--central-critic", type=bool, default=True, help="each group shares a central critic network")
     # Benchmarking
     parser.add_argument("--save-dir", type=str, default="./net_configs/")
     parser.add_argument("--result-name", type=str, default="rewards.csv",
@@ -68,7 +68,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs):
+def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario):
     agent_is_adv = agent.__contains__("adversary")
     agent_is_lead_adv = agent.__contains__("lead") and agent.__contains__("adversary")
     # ORDER OF LIST:
@@ -86,8 +86,12 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs):
         elif ag == agent and not agent_is_adv:
             good_dist.append(0)
             continue
-        coord_agent = obs[agent][2:4]  # TODO not always the coordinates!!!
-        coord = obs[ag][2:4]  # TODO not always the coordinates!!!
+        if scenario == "simple_adversary_v3":
+            coord_agent = obs[agent][:2]  # TODO not always the coordinates!!!
+            coord = obs[ag][:2] 
+        else:
+            coord_agent = obs[agent][2:4]  # TODO not always the coordinates!!!
+            coord = obs[ag][2:4]  # TODO not always the coordinates!!!
         # adding 1 to Euclidean distance doesn't change order after being sorted aside from making sure that
         # the current agent is first in either adv_dist_ind or good_dist_ind
         if ag.__contains__("adversary") and not ag.__contains__("lead"):
@@ -170,13 +174,13 @@ def display(env, lr, gamma, n_episodes, good_agent_network, adv_agent_network, a
 def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_network, adv_alt_agent_network,
           update_iter, save_iter, tau, output_path, load_path, memory, result_name, a_model, a_alt_model, g_model,
           n_good, n_adv, n_adv_alt, bootstrap_sampling, eps, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs,
-          num_adv_alt_obs, kNN_enabled):
+          num_adv_alt_obs, kNN_enabled, scenario):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     env.reset()
 
     agent_list = env.possible_agents
-    print(len(agent_list))
+    #print(len(agent_list))
     agent_indices = {agent: agent_list.index(agent) for agent in agent_list}
     memory = [ReplayMemory(int(memory)) for _ in agent_list]
 
@@ -226,8 +230,8 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                 knn_obs_lst = None
                 knn_obs_nxt_lst = None
                 if kNN_enabled:
-                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs)
-                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs)
+                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario)
+                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario)
                 memory[agent_indices[agent]].add(obs_n[agent], action_n[agent],
                                                  rew_n[agent], new_obs_n[agent],
                                                  done_n[agent], knn_obs_lst, knn_obs_nxt_lst)
@@ -414,4 +418,4 @@ if __name__ == '__main__':
               load_path=args.load_dir if args.restore else None, a_model=adv_model, a_alt_model=adv_alt_model,
               g_model=good_model, result_name=args.result_name, bootstrap_sampling=args.bootstrap, eps=args.eps,
               comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip, num_good_obs=args.num_good_obs,
-              num_adv_obs=args.num_adv_obs, num_adv_alt_obs=args.num_adv_alt_obs, kNN_enabled=args.kNN_enabled)
+              num_adv_obs=args.num_adv_obs, num_adv_alt_obs=args.num_adv_alt_obs, kNN_enabled=args.kNN_enabled, scenario = args.scenario)
