@@ -15,21 +15,21 @@ from MARL_TRAINER import MARL_TRAINER
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_reference_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_world_comm_v3", help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
-                                 "simple_world_comm_v3"])  # envs on this last line don't work yet
+                                 "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=2, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=0,
+    parser.add_argument("--num-adv", type=int, default=3,
                         help="number of adversaries. If the environment allows for it")
-    parser.add_argument("--num-adv-alt", type=int, default=0,
+    parser.add_argument("--num-adv-alt", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
     parser.add_argument("--num-good-obs", type=int, default=2,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=0,
+    parser.add_argument("--num-adv-obs", type=int, default=3,
                         help="number of adversaries observed by other agents critics")
-    parser.add_argument("--num-adv-alt-obs", type=int, default=0,
+    parser.add_argument("--num-adv-alt-obs", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type) observed by other agents critics")
     parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents",
                         choices=["maddpg", "ddpg"])
@@ -176,6 +176,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     env.reset()
 
     agent_list = env.possible_agents
+    print(len(agent_list))
     agent_indices = {agent: agent_list.index(agent) for agent in agent_list}
     memory = [ReplayMemory(int(memory)) for _ in agent_list]
 
@@ -301,7 +302,8 @@ if __name__ == '__main__':
         args.kNN_enabled = False
     elif args.scenario == "simple_world_comm_v3":
         # default: num_obstacles=1, num_food=2, num_forests=2
-        parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good, num_adversaries=args.num_adv,
+        parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good,
+                                                            num_adversaries=args.num_adv+args.num_adv_alt,
                                                             num_obstacles=1, num_food=2, num_forests=2,
                                                             continuous_actions=True)
     else:
