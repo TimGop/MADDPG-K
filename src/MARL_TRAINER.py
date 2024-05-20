@@ -4,6 +4,7 @@ from utils import soft_update
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
 from actor_critic import Critic
+import time
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -116,8 +117,8 @@ class MARL_TRAINER(object):
                 obs_n.append(obs)
                 obs_next_n.append(obs_next)
                 act_n.append(act)
-
             if self.kNN_enabled:
+                self.start = time.time_ns()
                 # knn_obs_lst/knn_obs_nxt_lst contains agent names/ids (knn for a given agent)
                 _, _, _, _, _, knn_obs_lsts, knn_obs_nxt_lsts = memory[agent_indices[agent]].sample_index(index)
                 obs_n_k_l = [[] for _ in range(self.num_adv_obs + self.num_good_obs)]
@@ -156,7 +157,7 @@ class MARL_TRAINER(object):
             # only needed for pos of curr agent and to get its length in update maddpg if KNN active
             knn_indices = {agent_id: knn_obs_lsts[0].index(agent_id) for agent_id in
                            knn_obs_lsts[0]} if self.kNN_enabled else None
-            self.update_MADDPG(rew=rew, done=done, obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
+            return self.update_MADDPG(rew=rew, done=done, obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
                                agent_list=agent_list, agent=agent, agent_indices=agent_indices,
                                knn_obs_nxt_lsts=knn_obs_nxt_lsts, knn_indices=knn_indices)
         else:
@@ -200,6 +201,7 @@ class MARL_TRAINER(object):
     def update_MADDPG(self, rew, done, obs_n, obs_next_n, act_n, agent_list, agent, agent_indices, knn_obs_nxt_lsts,
                       knn_indices):
         # train Q-net
+        lst_rfm = 0
         if not self.kNN_enabled:
             target_act_next_n = [self.agents[agent_id].act_update_target(obs_next_n[agent_indices[agent_id]]).detach()
                                  for agent_id in agent_list]
@@ -213,7 +215,9 @@ class MARL_TRAINER(object):
                         obs_next_n[knn_nxt_indices[agent_id]][batch_id].unsqueeze(0)).detach())
             for k, targ_act in enumerate(target_act_next_n):
                 target_act_next_n[k] = torch.cat(targ_act, dim=0)
-
+                lst_rfm = time.time_ns() - self.start
+            #print("List reform time:",lst_rfm)
+        self.start = time.time_ns()
         crit_targ_input = torch.cat([torch.cat(obs_next_n, dim=1), torch.cat(target_act_next_n, dim=1)], dim=1)
         target_q_next = self.agents[agent].critic_target(crit_targ_input)
         target_q = rew.unsqueeze(1) + self.gamma * (1 - done.unsqueeze(1).float()) * target_q_next
@@ -248,5 +252,6 @@ class MARL_TRAINER(object):
 
         soft_update(self.agents[agent].actor_target, self.agents[agent].actor, self.tau)
         soft_update(self.agents[agent].critic_target, self.agents[agent].critic, self.tau)
-
-        return policy_loss.item(), Q_loss.item()
+        updtm = time.time_ns() - self.start
+        #print("Update time:",updtm)
+        return lst_rfm, updtm
