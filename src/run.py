@@ -21,15 +21,15 @@ def parse_args():
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=3, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=0,
+    parser.add_argument("--num-adv", type=int, default=3,
                         help="number of adversaries. If the environment allows for it")
-    parser.add_argument("--num-adv-alt", type=int, default=0,
+    parser.add_argument("--num-adv-alt", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
     parser.add_argument("--num-good-obs", type=int, default=3,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=0,
+    parser.add_argument("--num-adv-obs", type=int, default=3,
                         help="number of adversaries observed by other agents critics")
-    parser.add_argument("--num-adv-alt-obs", type=int, default=0,
+    parser.add_argument("--num-adv-alt-obs", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type) observed by other agents critics")
     parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents",
                         choices=["maddpg", "ddpg"])
@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-hidden", type=int, default=64, help="number of hidden units in Network")
     parser.add_argument("--num-layers", type=int, default=1, help="number of hidden layers in Critic")
+    parser.add_argument("--activation", type=str, default="relu", help="activation function")
     parser.add_argument("--update-rate", type=int, default=100,
                         help="update policies once every time this many environment steps are completed (multiple of "
                              "25)")
@@ -64,7 +65,7 @@ def parse_args():
                         help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
-    parser.add_argument("--display", action="store_true", default=True)
+    parser.add_argument("--display", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -149,11 +150,14 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     env.reset()
 
     agent_list = env.possible_agents
-    #print(len(agent_list))
     adv_start = 0
-    if has_adv:
-        adv_start = agent_list.index("adversary_0")
-    good_start = agent_list.index("agent_0")
+    if scenario != "simple_speaker_listener_v4":
+        if has_adv:
+            adv_start = agent_list.index("adversary_0")
+        good_start = agent_list.index("agent_0")
+    else:
+        adv_start = 0
+        good_start = 0
 
     agent_indices = {agent: agent_list.index(agent) for agent in agent_list}
     memory = [ReplayMemory(int(memory)) for _ in agent_list]
@@ -162,7 +166,8 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                                        adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network,
                                        lr=lr, n_adv=n_adv, n_adv_alt=n_adv_alt, n_good=n_good, agent_list=agent_list,
                                        g_model=g_model, a_model=a_model, a_alt_model=a_alt_model, comb_crit=comb_crit,
-                                       wd=wd, grad_clip=grad_clip,num_good_obs=num_good_obs,num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
+                                       wd=wd, grad_clip=grad_clip,num_good_obs=num_good_obs,num_adv_obs=num_adv_obs,num_adv_alt_obs=num_adv_alt_obs,
+                                       kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
     if load_path is not None:
         for agent in agent_list:
@@ -260,6 +265,9 @@ if __name__ == '__main__':
                 "simple_speaker_listener_v4": simple_speaker_listener_v4, "simple_spread_v3": simple_spread_v3,
                 "simple_v3": simple_v3, "simple_world_comm_v3": simple_world_comm_v3}
 
+    args.num_adv_alt_obs = min(args.num_adv_alt_obs,args.num_adv_alt)
+    args.num_adv_obs = min(args.num_adv_obs,args.num_adv)
+    args.num_good_obs = min(args.num_good_obs,args.num_good)
     if args.scenario == "simple_tag_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
@@ -353,27 +361,27 @@ if __name__ == '__main__':
             act_sz = parallel_env.action_space(s).shape[0]
             critic_input = obs_sz + act_sz if args.adv_agent == "ddpg" else sum_act_size + sum_obs_size
             settings_adv_alt = {"actor_input_size": obs_sz, "actor_output_size": act_sz,
-                                "actor_n_layers": args.num_layers, "actor_n_hidden": args.num_hidden,
+                                "n_layers": args.num_layers, "n_hidden": args.num_hidden,
                                 "critic_input_size": critic_input, "critic_output_size": 1,
-                                "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+                                "activation": args.activation}
         elif s.__contains__("adversary"):
             num_adv += 1
             obs_sz = parallel_env.observation_space(s).shape[0]
             act_sz = parallel_env.action_space(s).shape[0]
             critic_input = obs_sz + act_sz if args.adv_agent == "ddpg" else sum_act_size + sum_obs_size
-            settings_adv = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
-                            "actor_n_hidden": args.num_hidden,
+            settings_adv = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "n_layers": args.num_layers,
+                            "n_hidden": args.num_hidden,
                             "critic_input_size": critic_input, "critic_output_size": 1,
-                            "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+                            "activation": args.activation}
         elif s.__contains__("agent"):
             num_good += 1
             obs_sz = parallel_env.observation_space(s).shape[0]
             act_sz = parallel_env.action_space(s).shape[0]
             critic_input = obs_sz + act_sz if args.good_agent == "ddpg" else sum_act_size + sum_obs_size
-            settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
-                             "actor_n_hidden": args.num_hidden,
+            settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "n_layers": args.num_layers,
+                             "n_hidden": args.num_hidden,
                              "critic_input_size": critic_input, "critic_output_size": 1,
-                             "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+                             "activation": args.activation}
 
         elif s.__contains__("listener"):
             num_good += 1
@@ -382,10 +390,10 @@ if __name__ == '__main__':
             # print(obs_sz)
             # print(act_sz)
             critic_input = obs_sz + act_sz if args.good_agent == "ddpg" else sum_act_size + sum_obs_size
-            settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
-                             "actor_n_hidden": args.num_hidden,
+            settings_good = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "n_layers": args.num_layers,
+                             "n_hidden": args.num_hidden,
                              "critic_input_size": critic_input, "critic_output_size": 1,
-                             "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+                             "activation": args.activation}
 
         elif s.__contains__("speaker"):
             num_adv += 1
@@ -394,10 +402,10 @@ if __name__ == '__main__':
             # print(obs_sz)
             # print(act_sz)
             critic_input = obs_sz + act_sz if args.adv_agent == "ddpg" else sum_act_size + sum_obs_size
-            settings_adv = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "actor_n_layers": args.num_layers,
-                            "actor_n_hidden": args.num_hidden,
+            settings_adv = {"actor_input_size": obs_sz, "actor_output_size": act_sz, "n_layers": args.num_layers,
+                            "n_hidden": args.num_hidden,
                             "critic_input_size": critic_input, "critic_output_size": 1,
-                            "critic_n_layers": args.num_layers, "critic_n_hidden": args.num_hidden}
+                            "activation": args.activation}
         else:
             raise Exception("Settings for agents could not be initialized (invalid agent types)...")
 
@@ -419,4 +427,5 @@ if __name__ == '__main__':
               load_path=args.load_dir if args.restore else None, a_model=adv_model, a_alt_model=adv_alt_model,
               g_model=good_model, result_name=args.result_name, bootstrap_sampling=args.bootstrap, eps=args.eps,
               comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip, num_good_obs=args.num_good_obs,
-              num_adv_obs=args.num_adv_obs, num_adv_alt_obs=args.num_adv_alt_obs, kNN_enabled=args.kNN_enabled, scenario = args.scenario)
+              num_adv_obs=args.num_adv_obs, num_adv_alt_obs=args.num_adv_alt_obs, kNN_enabled=args.kNN_enabled,
+              scenario=args.scenario)
