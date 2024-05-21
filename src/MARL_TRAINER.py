@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
 from utils import soft_update
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
@@ -86,7 +87,7 @@ def get_agents(n_adv, n_adv_alt, n_good, agent_list, gamma, tau, lr, env, adv_ag
 class MARL_TRAINER(object):
     def __init__(self, gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, num_adv,
                  num_good, agent_list, adv_model, adv_alt_model, good_model, comb_crit, wd, grad_clip, num_good_obs,
-                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt):
+                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt, num_adv_alt_obs):
         self.gamma = gamma
         self.tau = tau
         self.env = env
@@ -99,9 +100,46 @@ class MARL_TRAINER(object):
         self.num_good_obs = num_good_obs
         self.num_adv_obs = num_adv_obs
         self.BATCH_SIZE = BATCH_SIZE
+        self.as_ag = env.action_space(agent_list[0]).shape[0]
+        self.obs_idx = []
+        self.max_obs_size = 0
+        for agent in agent_list:
+            self.obs_idx.append(env.observation_space(agent).shape[0])
+        self.knn_obs = [0]
+        for agent in range(num_adv_alt_obs):
+            obs_s = env.observation_space(agent_list[agent]).shape[0]
+            self.max_obs_size = max(self.max_obs_size,obs_s)
+            self.knn_obs.append(self.knn_obs[-1] + obs_s)
+        for agent in range(num_adv_obs):
+            obs_s = env.observation_space(agent_list[agent+num_adv_alt]).shape[0]
+            self.max_obs_size = max(self.max_obs_size,obs_s)
+            self.knn_obs.append(self.knn_obs[-1] + obs_s)
+        for agent in range(num_good_obs):
+            obs_s = env.observation_space(agent_list[agent+num_adv_alt + num_adv]).shape[0]
+            self.max_obs_size = max(self.max_obs_size,obs_s)
+            self.knn_obs.append(self.knn_obs[-1] + obs_s)
+        self.ind_mat = np.repeat(np.arange(self.BATCH_SIZE)[None], num_good_obs+num_adv_obs+num_adv_alt, axis=0)
+    
+    
+    def get_inds(self,array,array2,acts,obss,obss_next):
+        vec_array_f = np.vectorize(self.get_i,signature="(),(),(l,n),(l,k),(l,k) -> (n),(k),(k)")
+        obs_next_rp = np.tile(obss_next,(array.shape[0],1,1,1)).transpose(0,2,1,3)
+        obs_rp = np.tile(obss,(array.shape[0],1,1,1)).transpose(0,2,1,3)
+        acts_rp = np.tile(acts,(array.shape[0],1,1,1)).transpose(0,2,1,3)
+        act,obs,obs_next = vec_array_f(array,array2,acts_rp,obs_rp,obs_next_rp)
+        return act,obs,obs_next
+    
+    def get_i(self, a,a2, acts, obss,obss_next):
+        return acts[a],obss[a],obss_next[a2]
+    
+    def get_target_i(self,ind,obs_list,obs_next, target):
+        mask = obs_list == ind
+        if mask.any():
+            target[mask,:] = self.agents[self.agent_list[ind]].act_update_target(obs_next[mask.T,:,:self.obs_idx[ind]]).detach()
 
     def update(self, memory, agent_list, agent, agent_indices, BATCH_SIZE):
 
+        self.start = time.time_ns()
         index = memory[agent_indices[agent]].make_index(BATCH_SIZE)
         knn_obs_nxt_lsts = None
         knn_obs_lsts = None
@@ -114,52 +152,46 @@ class MARL_TRAINER(object):
             act_n = []
             for agent_id in agent_list:
                 obs, act, _, obs_next, _, _, _ = memory[agent_indices[agent_id]].sample_index(index)
+                if self.kNN_enabled:
+                    diff = self.max_obs_size - obs.shape[1]
+                    if diff > 0:
+                        obs = np.concatenate((obs,np.full((obs.shape[0], diff),np.nan)),axis = 1)
+                        obs_next = np.concatenate((obs_next,np.full((obs_next.shape[0], diff),np.nan)),axis = 1)
                 obs_n.append(obs)
                 obs_next_n.append(obs_next)
                 act_n.append(act)
-            if self.kNN_enabled:
-                self.start = time.time_ns()
-                # knn_obs_lst/knn_obs_nxt_lst contains agent names/ids (knn for a given agent)
+            np_obs_n = np.stack(obs_n)
+            np_obs_next_n = np.stack(obs_next_n)
+            np_act_n = np.stack(act_n)
+            knn_indices = None
+            if not self.kNN_enabled:
+                target_act_next_n = [self.agents[agent_id].act_update_target(obs_next_n[agent_indices[agent_id]]).detach()
+                                    for agent_id in agent_list]
+            else:
+                
                 _, _, _, _, _, knn_obs_lsts, knn_obs_nxt_lsts = memory[agent_indices[agent]].sample_index(index)
-                obs_n_k_l = [[] for _ in range(self.num_adv_obs + self.num_good_obs)]
-                obs_next_n_k_l = [[] for _ in range(self.num_adv_obs + self.num_good_obs)]
-                act_n_k_l = [[] for _ in range(self.num_adv_obs + self.num_good_obs)]
-                obs_n_k = []
-                obs_next_n_k = []
-                act_n_k = []
-                btch_idx = 0
-
-                for knn_obs_lst in knn_obs_lsts:
-                    knn_indices = {agent: knn_obs_lst.index(agent) for agent in knn_obs_lst}
-                    for agent_id in knn_obs_lst:
-                        obs_n_k_l[knn_indices[agent_id]].append(obs_n[agent_indices[agent_id]][btch_idx])
-                        act_n_k_l[knn_indices[agent_id]].append(act_n[agent_indices[agent_id]][btch_idx])
-                    btch_idx += 1
-
-                btch_idx = 0
-                for knn_obs_nxt_lst in knn_obs_nxt_lsts:
-                    knn_indices = {agent: knn_obs_nxt_lst.index(agent) for agent in knn_obs_nxt_lst}
-                    for agent_id in knn_obs_nxt_lst:
-                        obs_next_n_k_l[knn_indices[agent_id]].append(obs_next_n[agent_indices[agent_id]][btch_idx])
-                    btch_idx += 1
-
-                for i in range(len(obs_n_k_l)):
-                    obs_n_k.append(torch.stack(obs_n_k_l[i]))
-                    act_n_k.append(torch.stack(act_n_k_l[i]))
-                    obs_next_n_k.append(torch.stack(obs_next_n_k_l[i]))
-                obs_n = obs_n_k
-                act_n = act_n_k
-                obs_next_n = obs_next_n_k
-
+                np_act_n , np_obs_n , np_obs_next_n= self.get_inds(knn_obs_lsts.T,knn_obs_nxt_lsts.T,np_act_n,np_obs_n,np_obs_next_n)
+                knn_sz = knn_obs_nxt_lsts.shape[1]
+                np_target_act_next = torch.zeros((knn_obs_nxt_lsts.shape[0],knn_sz,self.as_ag))
+                np_obs_n = torch.tensor(np_obs_n)
+                np_obs_next_n = torch.tensor(np_obs_next_n)
+                np_act_n = torch.tensor(np_act_n)
+                np.vectorize(self.get_target_i,excluded=[1,2,3])(np.arange(len(agent_list)), knn_obs_nxt_lsts, np_obs_next_n, np_target_act_next)
+                knn_indices = {agent: agent_indices[agent]}
+                obs_n = []
+                obs_next_n = []
+                act_n = []
+                target_act_next_n = []
+                for i in range(knn_sz):
+                    obs_n.append(np_obs_n[i,:,:self.obs_idx[i]])
+                    obs_next_n.append(np_obs_next_n[i,:,:self.obs_idx[i]])
+                    act_n.append(np_act_n[i,:,:])
+                    target_act_next_n.append(np_target_act_next[:,i,:])
             _, _, rew, _, done, _, _ = memory[agent_indices[agent]].sample_index(
                 index)
-
-            # only needed for pos of curr agent and to get its length in update maddpg if KNN active
-            knn_indices = {agent_id: knn_obs_lsts[0].index(agent_id) for agent_id in
-                           knn_obs_lsts[0]} if self.kNN_enabled else None
-            return self.update_MADDPG(rew=rew, done=done, obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
+            return time.time_ns() - self.start, self.update_MADDPG(rew=rew[:,None], done=done[:,None], obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
                                agent_list=agent_list, agent=agent, agent_indices=agent_indices,
-                               knn_obs_nxt_lsts=knn_obs_nxt_lsts, knn_indices=knn_indices)
+                               knn_indices=knn_indices, target_act_next_n= target_act_next_n)
         else:
             raise NotImplementedError("(not available) / (not implemented) multi-agent RL learning algorithm")
 
@@ -198,29 +230,12 @@ class MARL_TRAINER(object):
 
         return value_loss.item(), policy_loss.item()
 
-    def update_MADDPG(self, rew, done, obs_n, obs_next_n, act_n, agent_list, agent, agent_indices, knn_obs_nxt_lsts,
-                      knn_indices):
-        # train Q-net
-        lst_rfm = 0
-        if not self.kNN_enabled:
-            target_act_next_n = [self.agents[agent_id].act_update_target(obs_next_n[agent_indices[agent_id]]).detach()
-                                 for agent_id in agent_list]
-        else:
-            target_act_next_n = [[] for _ in range(len(knn_indices))]
-            for batch_id in range(self.BATCH_SIZE):
-                knn_nxt_indices = {agent_id: knn_obs_nxt_lsts[batch_id].index(agent_id) for agent_id in
-                                   knn_obs_nxt_lsts[batch_id]}
-                for i, agent_id in enumerate(knn_obs_nxt_lsts[batch_id]):
-                    target_act_next_n[i].append(self.agents[agent_id].act_update_target(
-                        obs_next_n[knn_nxt_indices[agent_id]][batch_id].unsqueeze(0)).detach())
-            for k, targ_act in enumerate(target_act_next_n):
-                target_act_next_n[k] = torch.cat(targ_act, dim=0)
-                lst_rfm = time.time_ns() - self.start
-            #print("List reform time:",lst_rfm)
+    def update_MADDPG(self, rew, done, obs_n, obs_next_n, act_n, agent_list, agent, agent_indices,
+                      knn_indices, target_act_next_n):
         self.start = time.time_ns()
         crit_targ_input = torch.cat([torch.cat(obs_next_n, dim=1), torch.cat(target_act_next_n, dim=1)], dim=1)
         target_q_next = self.agents[agent].critic_target(crit_targ_input)
-        target_q = rew.unsqueeze(1) + self.gamma * (1 - done.unsqueeze(1).float()) * target_q_next
+        target_q = rew + self.gamma * (1 - done) * target_q_next
 
         self.agents[agent].critic_optimizer.zero_grad()
         obs_n_cat = torch.cat(obs_n, dim=1)
@@ -253,5 +268,4 @@ class MARL_TRAINER(object):
         soft_update(self.agents[agent].actor_target, self.agents[agent].actor, self.tau)
         soft_update(self.agents[agent].critic_target, self.agents[agent].critic, self.tau)
         updtm = time.time_ns() - self.start
-        #print("Update time:",updtm)
-        return lst_rfm, updtm
+        return updtm

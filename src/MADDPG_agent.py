@@ -28,9 +28,7 @@ class MADDPG_agent(object):
         hard_update(self.actor_target, self.actor)
 
     def act_update_target(self, select_action_State):
-        logits = self.actor_target(select_action_State)
-        action = torch.softmax(logits, dim=1)
-        return action
+        return torch.softmax(self.actor_target(select_action_State), dim=1)
 
     def act_update(self, select_action_State):
         logits = self.actor(select_action_State)
