@@ -44,7 +44,6 @@ class DDPG_agent(object):
         hard_update(self.critic_target, self.critic)  # make sure _ and target have same weights
         hard_update(self.actor_target, self.actor)  # make sure _ and target have same weights
 
-
     def act_update_target(self, select_action_State):
         return torch.softmax(self.actor_target(select_action_State), dim=1)
 

@@ -100,10 +100,24 @@ def get_agents(n_adv, n_adv_alt, n_good, agent_list, gamma, tau, lr, env, adv_ag
     return agents
 
 
+def get_i(a, a2, acts, obss, obss_next):
+    return acts[a], obss[a], obss_next[a2]
+
+
+def get_inds(array, array2, acts, obss, obss_next):
+    vec_array_f = np.vectorize(get_i, signature="(),(),(l,n),(l,k),(l,k) -> (n),(k),(k)")
+    obs_next_rp = np.tile(obss_next, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    obs_rp = np.tile(obss, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    acts_rp = np.tile(acts, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    act, obs, obs_next = vec_array_f(array, array2, acts_rp, obs_rp, obs_next_rp)
+    return act, obs, obs_next
+
+
 class MARL_TRAINER(object):
     def __init__(self, gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, num_adv,
                  num_good, agent_list, adv_model, adv_alt_model, good_model, comb_crit, wd, grad_clip, num_good_obs,
-                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt, num_adv_alt_obs):
+                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt):
+        self.start = None
         self.gamma = gamma
         self.tau = tau
         self.env = env
@@ -123,37 +137,26 @@ class MARL_TRAINER(object):
         for agent in agent_list:
             obs = env.observation_space(agent).shape[0]
             act = env.action_space(agent).shape[0]
-            self.max_obs_size = max(self.max_obs_size,obs)
-            self.max_act_size = max(self.max_act_size,act)
+            self.max_obs_size = max(self.max_obs_size, obs)
+            self.max_act_size = max(self.max_act_size, act)
             self.obs_idx.append(obs)
             self.act_idx.append(act)
-    
-    
-    def get_inds(self,array,array2,acts,obss,obss_next):
-        vec_array_f = np.vectorize(self.get_i,signature="(),(),(l,n),(l,k),(l,k) -> (n),(k),(k)")
-        obs_next_rp = np.tile(obss_next,(array.shape[0],1,1,1)).transpose(0,2,1,3)
-        obs_rp = np.tile(obss,(array.shape[0],1,1,1)).transpose(0,2,1,3)
-        acts_rp = np.tile(acts,(array.shape[0],1,1,1)).transpose(0,2,1,3)
-        act,obs,obs_next = vec_array_f(array,array2,acts_rp,obs_rp,obs_next_rp)
-        return act,obs,obs_next
-    
-    def get_i(self, a,a2, acts, obss,obss_next):
-        return acts[a],obss[a],obss_next[a2]
-    
-    def get_target_i(self,ind,obs_list,obs_next, target):
+
+    def get_target_i(self, ind, obs_list, obs_next, target):
         mask = obs_list == ind
+        mask = np.array(mask)  # IDE had trouble recognizing that mask was a np.array before this was added
         if mask.any():
-            t_act = self.agents[self.agent_list[ind]].act_update_target(obs_next[mask.T,:,:self.obs_idx[ind]]).detach()
+            t_act = self.agents[self.agent_list[ind]].act_update_target(
+                obs_next[mask.T, :, :self.obs_idx[ind]]).detach()
             if (self.max_act_size - t_act.shape[1]) > 0:
-                t_act = torch.cat((t_act,torch.full((obs_next.shape[1], self.max_act_size - t_act.shape[1]),torch.nan)), dim = 1)
-            target[mask,:] = t_act
+                t_act = torch.cat(
+                    (t_act, torch.full((obs_next.shape[1], self.max_act_size - t_act.shape[1]), torch.nan)), dim=1)
+            target[mask, :] = t_act
 
     def update(self, memory, agent_list, agent, agent_indices, BATCH_SIZE):
 
         self.start = time.time_ns()
         index = memory[agent_indices[agent]].make_index(BATCH_SIZE)
-        knn_obs_nxt_lsts = None
-        knn_obs_lsts = None
         if isinstance(self.agents[agent], DDPG_agent):
             return self.update_DDPG(*(memory[agent_indices[agent]].sample_index(index)[:5]), agent)
         # collect replay sample from all agents
@@ -167,44 +170,50 @@ class MARL_TRAINER(object):
                     diff = self.max_obs_size - obs.shape[1]
                     diff_act = self.max_act_size - act.shape[1]
                     if diff > 0:
-                        obs = np.concatenate((obs,np.full((obs.shape[0], diff),np.nan)),axis = 1)
-                        obs_next = np.concatenate((obs_next,np.full((obs_next.shape[0], diff),np.nan)),axis = 1)
+                        obs = np.concatenate((obs, np.full((obs.shape[0], diff), np.nan)), axis=1)
+                        obs_next = np.concatenate((obs_next, np.full((obs_next.shape[0], diff), np.nan)), axis=1)
                     if diff_act > 0:
-                        act = np.concatenate((act,np.full((act.shape[0], diff_act),np.nan)),axis = 1)
+                        act = np.concatenate((act, np.full((act.shape[0], diff_act), np.nan)), axis=1)
                 obs_n.append(obs)
                 obs_next_n.append(obs_next)
                 act_n.append(act)
             knn_indices = None
             if not self.kNN_enabled:
-                target_act_next_n = [self.agents[agent_id].act_update_target(obs_next_n[agent_indices[agent_id]]).detach()
-                                    for agent_id in agent_list]
+                target_act_next_n = [
+                    self.agents[agent_id].act_update_target(obs_next_n[agent_indices[agent_id]]).detach()
+                    for agent_id in agent_list]
             else:
-                np_obs_n = np.stack(obs_n,dtype=np.float32)
-                np_obs_next_n = np.stack(obs_next_n,dtype=np.float32)
-                np_act_n = np.stack(act_n,dtype=np.float32)
+                np_obs_n = np.stack(obs_n, dtype=np.float32)
+                np_obs_next_n = np.stack(obs_next_n, dtype=np.float32)
+                np_act_n = np.stack(act_n, dtype=np.float32)
                 _, _, _, _, _, knn_obs_lsts, knn_obs_nxt_lsts = memory[agent_indices[agent]].sample_index(index)
-                np_act_n , np_obs_n , np_obs_next_n= self.get_inds(knn_obs_lsts.T,knn_obs_nxt_lsts.T,np_act_n,np_obs_n,np_obs_next_n)
+                np_act_n, np_obs_n, np_obs_next_n = get_inds(knn_obs_lsts.T, knn_obs_nxt_lsts.T, np_act_n,
+                                                                  np_obs_n, np_obs_next_n)
                 knn_sz = knn_obs_nxt_lsts.shape[1]
-                np_target_act_next = torch.zeros((knn_obs_nxt_lsts.shape[0],knn_sz,self.max_act_size))
+                np_target_act_next = torch.zeros((knn_obs_nxt_lsts.shape[0], knn_sz, self.max_act_size))
                 np_obs_n = torch.tensor(np_obs_n)
-                np_obs_next_n = torch.tensor(np_obs_next_n,dtype=torch.float32)
+                np_obs_next_n = torch.tensor(np_obs_next_n, dtype=torch.float32)
                 np_act_n = torch.tensor(np_act_n)
-                np.vectorize(self.get_target_i,excluded=[1,2,3])(np.arange(len(agent_list)), knn_obs_nxt_lsts, np_obs_next_n, np_target_act_next)
+                np.vectorize(self.get_target_i, excluded=[1, 2, 3])(np.arange(len(agent_list)), knn_obs_nxt_lsts,
+                                                                    np_obs_next_n, np_target_act_next)
                 knn_indices = {agent: list(knn_obs_lsts[0]).index(agent_indices[agent])}
                 obs_n = []
                 obs_next_n = []
                 act_n = []
                 target_act_next_n = []
                 for i in range(knn_sz):
-                    obs_n.append(np_obs_n[i,:,:self.obs_idx[i]])
-                    obs_next_n.append(np_obs_next_n[i,:,:self.obs_idx[i]])
-                    act_n.append(np_act_n[i,:,:self.act_idx[i]])
-                    target_act_next_n.append(np_target_act_next[:,i,:self.act_idx[i]])
+                    obs_n.append(np_obs_n[i, :, :self.obs_idx[i]])
+                    obs_next_n.append(np_obs_next_n[i, :, :self.obs_idx[i]])
+                    act_n.append(np_act_n[i, :, :self.act_idx[i]])
+                    target_act_next_n.append(np_target_act_next[:, i, :self.act_idx[i]])
             _, _, rew, _, done, _, _ = memory[agent_indices[agent]].sample_index(
                 index)
-            return time.time_ns() - self.start, self.update_MADDPG(rew=rew[:,None], done=done[:,None], obs_n=obs_n, obs_next_n=obs_next_n, act_n=act_n,
-                               agent_list=agent_list, agent=agent, agent_indices=agent_indices,
-                               knn_indices=knn_indices, target_act_next_n= target_act_next_n)
+            return time.time_ns() - self.start, self.update_MADDPG(rew=rew[:, None], done=done[:, None], obs_n=obs_n,
+                                                                   obs_next_n=obs_next_n, act_n=act_n,
+                                                                   agent_list=agent_list, agent=agent,
+                                                                   agent_indices=agent_indices,
+                                                                   knn_indices=knn_indices,
+                                                                   target_act_next_n=target_act_next_n)
         else:
             raise NotImplementedError("(not available) / (not implemented) multi-agent RL learning algorithm")
 
