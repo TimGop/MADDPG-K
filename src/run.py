@@ -23,14 +23,11 @@ def parse_args():
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=3, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=0,
-    parser.add_argument("--num-adv", type=int, default=1,
-                        help="number of adversaries. If the environment allows for it")
+    parser.add_argument("--num-adv", type=int, default=1,help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
     parser.add_argument("--num-good-obs", type=int, default=2,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=0,
     parser.add_argument("--num-adv-obs", type=int, default=1,
                         help="number of adversaries observed by other agents critics")
     parser.add_argument("--num-adv-alt-obs", type=int, default=0,
@@ -100,7 +97,7 @@ def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, a
                         adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network, lr=lr,
                         num_adv=n_adv, num_adv_alt=n_adv_alt, num_good=n_good, agent_list=agent_list, adv_model=a_model,
                         adv_alt_model=a_alt_model, good_model=g_model, comb_crit=comb_crit, wd=wd, grad_clip=grad_clip,
-                        num_good_obs=num_good_obs, num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,
+                        num_good_obs=num_good_obs, num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,num_adv_alt_obs=num_adv_alt,
                         BATCH_SIZE=BATCH_SIZE)
 
 

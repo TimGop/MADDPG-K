@@ -116,7 +116,7 @@ def get_inds(array, array2, acts, obss, obss_next):
 class MARL_TRAINER(object):
     def __init__(self, gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, num_adv,
                  num_good, agent_list, adv_model, adv_alt_model, good_model, comb_crit, wd, grad_clip, num_good_obs,
-                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt):
+                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt, num_adv_alt_obs):
         self.start = None
         self.gamma = gamma
         self.tau = tau
