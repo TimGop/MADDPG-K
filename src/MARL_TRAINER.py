@@ -100,10 +100,24 @@ def get_agents(n_adv, n_adv_alt, n_good, agent_list, gamma, tau, lr, env, adv_ag
     return agents
 
 
+def get_i(a, a2, acts, obss, obss_next):
+    return acts[a], obss[a], obss_next[a2]
+
+
+def get_inds(array, array2, acts, obss, obss_next):
+    vec_array_f = np.vectorize(get_i, signature="(),(),(l,n),(l,k),(l,k) -> (n),(k),(k)")
+    obs_next_rp = np.tile(obss_next, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    obs_rp = np.tile(obss, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    acts_rp = np.tile(acts, (array.shape[0], 1, 1, 1)).transpose(0, 2, 1, 3)
+    act, obs, obs_next = vec_array_f(array, array2, acts_rp, obs_rp, obs_next_rp)
+    return act, obs, obs_next
+
+
 class MARL_TRAINER(object):
     def __init__(self, gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, num_adv,
                  num_good, agent_list, adv_model, adv_alt_model, good_model, comb_crit, wd, grad_clip, num_good_obs,
-                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt, num_adv_alt_obs):
+                 num_adv_obs, kNN_enabled, BATCH_SIZE, num_adv_alt):
+        self.start = None
         self.gamma = gamma
         self.tau = tau
         self.env = env
@@ -120,8 +134,6 @@ class MARL_TRAINER(object):
 
     def update(self, memory, agent_list, agent, agent_indices, BATCH_SIZE):
         index = memory[agent_indices[agent]].make_index(BATCH_SIZE)
-        knn_obs_nxt_lsts = None
-        knn_obs_lsts = None
         if isinstance(self.agents[agent], DDPG_agent):
             return self.update_DDPG(*(memory[agent_indices[agent]].sample_index(index)[:5]), agent)
         # collect replay sample from all agents

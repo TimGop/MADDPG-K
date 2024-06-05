@@ -10,7 +10,9 @@ from utils import ReplayMemory
 from DDPG_agent import DDPG_agent
 from MADDPG_agent import MADDPG_agent
 from MARL_TRAINER import MARL_TRAINER
+
 has_adv = False
+
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
@@ -21,15 +23,17 @@ def parse_args():
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=3, help="number of agents")
+    parser.add_argument("--num-adv", type=int, default=0,
     parser.add_argument("--num-adv", type=int, default=1,
                         help="number of adversaries. If the environment allows for it")
-    parser.add_argument("--num-adv-alt", type=int, default=1,
+    parser.add_argument("--num-adv-alt", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
     parser.add_argument("--num-good-obs", type=int, default=2,
                         help="number of good agents observed by other agents critics")
+    parser.add_argument("--num-adv-obs", type=int, default=0,
     parser.add_argument("--num-adv-obs", type=int, default=1,
                         help="number of adversaries observed by other agents critics")
-    parser.add_argument("--num-adv-alt-obs", type=int, default=1,
+    parser.add_argument("--num-adv-alt-obs", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type) observed by other agents critics")
     parser.add_argument("--good-agent", type=str, default="maddpg", help="policy for good agents",
                         choices=["maddpg", "ddpg"])
@@ -69,17 +73,16 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start,adv_start):
-    knn_list = []
+def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario, good_start, adv_start):
     ag_id = agent_list.index(agent)
     if scenario == "simple_adversary_v3":
         dist = np.stack([obv[:2] for obv in list(obs.values())])
     else:
         dist = np.stack([obv[2:4] for obv in list(obs.values())])
-    dist = np.linalg.norm(dist - dist[ag_id], axis= 1) + 1
+    dist = np.linalg.norm(dist - dist[ag_id], axis=1) + 1
     dist[ag_id] = 0
-    adv_dist_ind = np.array([],dtype=np.int16)
-    adv_alt_dist_ind = np.array([],dtype=np.int16)
+    adv_dist_ind = np.array([], dtype=np.int16)
+    adv_alt_dist_ind = np.array([], dtype=np.int16)
     if num_adv_alt_obs > 0:
         adv_alt_dist_ind = dist[:adv_start].argsort(axis=0)[:num_adv_alt_obs]
     if num_adv_obs > 0:
@@ -92,25 +95,25 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, 
 
 def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, n_adv,
                        n_adv_alt, n_good, agent_list, g_model, a_model, a_alt_model, comb_crit, wd, grad_clip,
-                       num_good_obs=None, num_adv_obs=None,num_adv_alt_obs = None, kNN_enabled=False, BATCH_SIZE=None):
+                       num_good_obs=None, num_adv_obs=None, kNN_enabled=False, BATCH_SIZE=None):
     return MARL_TRAINER(gamma=gamma, tau=tau, env=env, good_agent_network=good_agent_network,
                         adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network, lr=lr,
                         num_adv=n_adv, num_adv_alt=n_adv_alt, num_good=n_good, agent_list=agent_list, adv_model=a_model,
                         adv_alt_model=a_alt_model, good_model=g_model, comb_crit=comb_crit, wd=wd, grad_clip=grad_clip,
-                        num_good_obs=num_good_obs, num_adv_alt_obs=num_adv_alt_obs,
-                        num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
+                        num_good_obs=num_good_obs, num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,
+                        BATCH_SIZE=BATCH_SIZE)
 
 
 def display(env, lr, gamma, n_episodes, good_agent_network, adv_agent_network, adv_alt_agent_network,
-            tau, load_path, a_model, a_alt_model, g_model,BATCH_SIZE,
-          n_good, n_adv, n_adv_alt, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs,kNN_enabled, num_adv_alt_obs):
+            tau, load_path, a_model, a_alt_model, g_model, BATCH_SIZE,
+            n_good, n_adv, n_adv_alt, comb_crit, wd, grad_clip, num_good_obs, num_adv_obs, kNN_enabled):
     agent_list = env.possible_agents
     agent_trainer = initialize_trainer(gamma=gamma, tau=tau, env=env, good_agent_network=good_agent_network,
                                        adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network,
                                        lr=lr, n_adv=n_adv, n_adv_alt=n_adv_alt, n_good=n_good, agent_list=agent_list,
                                        g_model=g_model, a_model=a_model, a_alt_model=a_alt_model, comb_crit=comb_crit,
-                                       wd=wd, grad_clip=grad_clip,num_good_obs=num_good_obs,num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,
-                                       num_adv_alt_obs = num_adv_alt_obs, BATCH_SIZE=BATCH_SIZE)
+                                       wd=wd, grad_clip=grad_clip, num_good_obs=num_good_obs, num_adv_obs=num_adv_obs,
+                                       kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
     if load_path is not None:
         for agent in agent_list:
             try:
@@ -167,7 +170,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                                        adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network,
                                        lr=lr, n_adv=n_adv, n_adv_alt=n_adv_alt, n_good=n_good, agent_list=agent_list,
                                        g_model=g_model, a_model=a_model, a_alt_model=a_alt_model, comb_crit=comb_crit,
-                                       wd=wd, grad_clip=grad_clip,num_good_obs=num_good_obs,num_adv_obs=num_adv_obs,num_adv_alt_obs=num_adv_alt_obs,
+                                       wd=wd, grad_clip=grad_clip, num_good_obs=num_good_obs, num_adv_obs=num_adv_obs,
                                        kNN_enabled=kNN_enabled, BATCH_SIZE=BATCH_SIZE)
 
     if load_path is not None:
@@ -195,8 +198,8 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
     steps = 0
     ep_rew = np.zeros(shape=(len(agent_list)), dtype=np.int32)
     tme = 0
-    lstms=0
-    updtms =0
+    lstms = 0
+    updtms = 0
     for i_episode in range(n_episodes):
         while True:
             if bootstrap_sampling and (i_episode < BATCH_SIZE or eps >= np.random.rand()):
@@ -214,8 +217,10 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                 knn_obs_nxt_lst = None
                 if kNN_enabled:
                     strt = time.time_ns()
-                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start, adv_start)
-                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, scenario,good_start, adv_start)
+                    knn_obs_lst = get_knn(obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs,
+                                          scenario, good_start, adv_start)
+                    knn_obs_nxt_lst = get_knn(new_obs_n, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs,
+                                              scenario, good_start, adv_start)
                     tme += (time.time_ns() - strt)
                 memory[agent_indices[agent]].add(obs_n[agent], action_n[agent],
                                                  rew_n[agent], new_obs_n[agent],
@@ -260,21 +265,21 @@ if __name__ == '__main__':
                 "simple_speaker_listener_v4": simple_speaker_listener_v4, "simple_spread_v3": simple_spread_v3,
                 "simple_v3": simple_v3, "simple_world_comm_v3": simple_world_comm_v3}
 
-    args.num_adv_alt_obs = min(args.num_adv_alt_obs,args.num_adv_alt)
-    args.num_adv_obs = min(args.num_adv_obs,args.num_adv)
-    args.num_good_obs = min(args.num_good_obs,args.num_good)
+    args.num_adv_alt_obs = min(args.num_adv_alt_obs, args.num_adv_alt)
+    args.num_adv_obs = min(args.num_adv_obs, args.num_adv)
+    args.num_good_obs = min(args.num_good_obs, args.num_good)
     if args.scenario == "simple_tag_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             num_good=args.num_good, num_adversaries=args.num_adv)
-        has_adv=True
+        has_adv = True
         args.num_adv_alt = 0
         args.num_adv_alt_obs = 0
     elif args.scenario == "simple_spread_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
-        
+
         args.num_adv_alt = 0
         args.num_adv_alt_obs = 0
         args.num_adv = 0
@@ -283,12 +288,12 @@ if __name__ == '__main__':
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None,
                                                             N=args.num_good)
-        
+
         args.num_adv_alt = 0
         args.num_adv_alt_obs = 0
         args.num_adv = 1
         args.num_adv_obs = 1
-        
+
     elif args.scenario == "simple_push_v3":
         parallel_env = env_dict[args.scenario].parallel_env(continuous_actions=True,
                                                             render_mode="human" if args.display else None)
@@ -309,10 +314,10 @@ if __name__ == '__main__':
     elif args.scenario == "simple_world_comm_v3":
         # default: num_obstacles=1, num_food=2, num_forests=2
         parallel_env = env_dict[args.scenario].parallel_env(num_good=args.num_good,
-                                                            num_adversaries=args.num_adv+args.num_adv_alt,
+                                                            num_adversaries=args.num_adv + args.num_adv_alt,
                                                             num_obstacles=1, num_food=2, num_forests=2,
                                                             continuous_actions=True)
-        has_adv=True
+        has_adv = True
     else:
         raise Exception("The environment ", args.scenario, " is not implemented")
 
@@ -408,12 +413,12 @@ if __name__ == '__main__':
     good_model = algos[args.good_agent]
     adv_alt_model = algos[args.adv_alt_agent]
     if args.display:
-        display(env=parallel_env, lr=args.lr, gamma=args.gamma, tau=args.tau,BATCH_SIZE=args.batch_size,
+        display(env=parallel_env, lr=args.lr, gamma=args.gamma, tau=args.tau, BATCH_SIZE=args.batch_size,
                 n_episodes=int(args.num_episodes), good_agent_network=settings_good, adv_agent_network=settings_adv,
                 adv_alt_agent_network=settings_adv_alt, n_good=num_good, n_adv=num_adv, n_adv_alt=num_adv_alt,
                 load_path=args.load_dir, a_model=adv_model, a_alt_model=adv_alt_model, g_model=good_model,
-                comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip,num_good_obs=args.num_good_obs,
-              num_adv_obs=args.num_adv_obs, num_adv_alt_obs=args.num_adv_alt_obs, kNN_enabled=args.kNN_enabled)
+                comb_crit=args.central_critic, wd=args.wd, grad_clip=args.gradclip, num_good_obs=args.num_good_obs,
+                num_adv_obs=args.num_adv_obs, kNN_enabled=args.kNN_enabled)
     else:
         train(env=parallel_env, BATCH_SIZE=args.batch_size, lr=args.lr, gamma=args.gamma, tau=args.tau,
               n_episodes=int(args.num_episodes), good_agent_network=settings_good, adv_agent_network=settings_adv,
