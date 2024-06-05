@@ -58,7 +58,7 @@ class ReplayMemory(object):
             knn_next_lists.append(knn_next_list)
         return (torch.tensor(np.stack(obs), dtype=torch.float32), torch.tensor(np.stack(act), dtype=torch.float32),
                 torch.tensor(np.stack(rew), dtype=torch.float32), torch.tensor(np.stack(next_obs), dtype=torch.float32),
-                torch.tensor(np.stack(dones), dtype=torch.float32), np.stack(knn_curr_lists), np.stack(knn_next_lists))
+                torch.tensor(np.stack(dones), dtype=torch.float32), knn_curr_lists, knn_next_lists)
 
     def make_index(self, batch_size):
         return [random.randint(0, len(self._store) - 1) for _ in range(batch_size)]

@@ -15,19 +15,19 @@ has_adv = False
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_spread_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_push_v3", help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
     parser.add_argument("--num-good", type=int, default=3, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=3,
+    parser.add_argument("--num-adv", type=int, default=1,
                         help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
-    parser.add_argument("--num-good-obs", type=int, default=3,
+    parser.add_argument("--num-good-obs", type=int, default=2,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=3,
+    parser.add_argument("--num-adv-obs", type=int, default=1,
                         help="number of adversaries observed by other agents critics")
     parser.add_argument("--num-adv-alt-obs", type=int, default=1,
                         help="number of adversary alternatives (3rd agent type) observed by other agents critics")
@@ -86,7 +86,8 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, 
         adv_dist_ind = dist[adv_start:good_start].argsort(axis=0)[:num_adv_obs] + num_adv_alt
     good_dist_ind = dist[good_start:].argsort(axis=0)[:num_good_obs] + num_adv_alt + num_adv
     knn_list = np.concatenate([adv_alt_dist_ind,adv_dist_ind,good_dist_ind], dtype=np.int16)
-    return knn_list
+    ret_list = [agent_list[k] for k in knn_list]
+    return ret_list
 
 
 def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, adv_alt_agent_network, lr, n_adv,
@@ -220,7 +221,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                                                  rew_n[agent], new_obs_n[agent],
                                                  done_n[agent], knn_obs_lst, knn_obs_nxt_lst)
             obs_n = new_obs_n
-            if i_episode > BATCH_SIZE and steps % update_iter == 0:
+            if i_episode*25 > BATCH_SIZE and steps % update_iter == 0:
                 for agent in agent_list:
                     lstm, uptm = agent_trainer.update(memory, agent_list, agent, agent_indices, BATCH_SIZE)
                     lstms += lstm
@@ -231,12 +232,6 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
             steps += 1
         if i_episode % save_iter == 0:
             end = time.time()
-            print("get_knn time:", tme/1e9)
-            tme = 0
-            print("List time:", lstms/1e9)
-            lstms = 0
-            print("update time:", updtms/1e9)
-            updtms = 0
             print(f"Episode: {i_episode}, Time : {end - start}")
             ag_rew = ep_rew / save_iter
             ep_rew = np.zeros(shape=(len(agent_list)), dtype=np.int32)
