@@ -17,12 +17,12 @@ has_adv = False
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_push_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_adversary_v3", help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
+    parser.add_argument("--num-good", type=int, default=2, help="number of agents")
     parser.add_argument("--num-adv", type=int, default=1,help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
@@ -223,7 +223,7 @@ def train(env, BATCH_SIZE, lr, gamma, n_episodes, good_agent_network, adv_agent_
                                                  rew_n[agent], new_obs_n[agent],
                                                  done_n[agent], knn_obs_lst, knn_obs_nxt_lst)
             obs_n = new_obs_n
-            if i_episode*25 > BATCH_SIZE and steps % update_iter == 0:
+            if i_episode > BATCH_SIZE and steps % update_iter == 0:
                 for agent in agent_list:
                     lstm, uptm = agent_trainer.update(memory, agent_list, agent, agent_indices, BATCH_SIZE)
                     lstms += lstm
