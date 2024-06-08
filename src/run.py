@@ -38,7 +38,7 @@ def parse_args():
                         choices=["maddpg", "ddpg"])
     parser.add_argument("--adv-alt-agent", type=str, default="maddpg",
                         help="policy of second adversary type or third agent", choices=["maddpg", "ddpg"])
-    parser.add_argument("--kNN-enabled", type=bool, default=True, help="only look at kNN per critic")
+    parser.add_argument("--kNN-enabled", type=bool, default=False, help="only look at kNN per critic")
     # Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")

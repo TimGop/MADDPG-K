@@ -133,6 +133,8 @@ class MARL_TRAINER(object):
         self.BATCH_SIZE = BATCH_SIZE
 
     def update(self, memory, agent_list, agent, agent_indices, BATCH_SIZE):
+        knn_obs_lsts = None
+        knn_obs_nxt_lsts = None
         index = memory[agent_indices[agent]].make_index(BATCH_SIZE)
         if isinstance(self.agents[agent], DDPG_agent):
             return self.update_DDPG(*(memory[agent_indices[agent]].sample_index(index)[:5]), agent)
