@@ -17,18 +17,19 @@ has_adv = False
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for MPE environments")
     # Environment
-    parser.add_argument("--scenario", type=str, default="simple_adversary_v3", help="name of the scenario script",
+    parser.add_argument("--scenario", type=str, default="simple_spread_v3", help="name of the scenario script",
                         choices=["simple_tag_v3", "simple_adversary_v3", "simple_spread_v3", "simple_v3",
                                  "simple_push_v3", "simple_reference_v3", "simple_speaker_listener_v4",
                                  "simple_world_comm_v3"])
     parser.add_argument("--num-episodes", type=int, default=int(5e4), help="number of episodes")
-    parser.add_argument("--num-good", type=int, default=2, help="number of agents")
-    parser.add_argument("--num-adv", type=int, default=1,help="number of adversaries. If the environment allows for it")
+    parser.add_argument("--num-good", type=int, default=3, help="number of agents")
+    parser.add_argument("--num-adv", type=int, default=0,
+                        help="number of adversaries. If the environment allows for it")
     parser.add_argument("--num-adv-alt", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type). If the environment allows for it")
-    parser.add_argument("--num-good-obs", type=int, default=2,
+    parser.add_argument("--num-good-obs", type=int, default=3,
                         help="number of good agents observed by other agents critics")
-    parser.add_argument("--num-adv-obs", type=int, default=1,
+    parser.add_argument("--num-adv-obs", type=int, default=0,
                         help="number of adversaries observed by other agents critics")
     parser.add_argument("--num-adv-alt-obs", type=int, default=0,
                         help="number of adversary alternatives (3rd agent type) observed by other agents critics")
@@ -37,8 +38,8 @@ def parse_args():
     parser.add_argument("--adv-agent", type=str, default="maddpg", help="policy of adversaries",
                         choices=["maddpg", "ddpg"])
     parser.add_argument("--adv-alt-agent", type=str, default="maddpg",
-                        help="policy of second adversary type or third agent", choices=["maddpg", "ddpg"])
-    parser.add_argument("--kNN-enabled", type=bool, default=False, help="only look at kNN per critic")
+                        help="policy of second adversary type and potentially third agent", choices=["maddpg", "ddpg"])
+    parser.add_argument("--kNN-enabled", type=bool, default=True, help="only look at kNN per critic")
     # Training parameters
     parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
     parser.add_argument("--tau", type=float, default=1e-2, help="target soft update parameter")
@@ -85,7 +86,7 @@ def get_knn(obs, agent, agent_list, num_good_obs, num_adv_obs, num_adv_alt_obs, 
     if num_adv_obs > 0:
         adv_dist_ind = dist[adv_start:good_start].argsort(axis=0)[:num_adv_obs] + num_adv_alt
     good_dist_ind = dist[good_start:].argsort(axis=0)[:num_good_obs] + num_adv_alt + num_adv
-    knn_list = np.concatenate([adv_alt_dist_ind,adv_dist_ind,good_dist_ind], dtype=np.int16)
+    knn_list = np.concatenate([adv_alt_dist_ind, adv_dist_ind, good_dist_ind], dtype=np.int16)
     ret_list = [agent_list[k] for k in knn_list]
     return ret_list
 
@@ -97,7 +98,8 @@ def initialize_trainer(gamma, tau, env, good_agent_network, adv_agent_network, a
                         adv_agent_network=adv_agent_network, adv_alt_agent_network=adv_alt_agent_network, lr=lr,
                         num_adv=n_adv, num_adv_alt=n_adv_alt, num_good=n_good, agent_list=agent_list, adv_model=a_model,
                         adv_alt_model=a_alt_model, good_model=g_model, comb_crit=comb_crit, wd=wd, grad_clip=grad_clip,
-                        num_good_obs=num_good_obs, num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,num_adv_alt_obs=num_adv_alt,
+                        num_good_obs=num_good_obs, num_adv_obs=num_adv_obs, kNN_enabled=kNN_enabled,
+                        num_adv_alt_obs=num_adv_alt,
                         BATCH_SIZE=BATCH_SIZE)
 
 
